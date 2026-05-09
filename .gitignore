@@ -1,0 +1,88 @@
+# ───────────────────────────────────────────────────────────────────────────
+# wsinsight-model-development — .gitignore
+#
+# Policy: the repo carries SOURCE only.  Bulk public data, derived training
+# artifacts, vendored upstream code, and large model checkpoints are NEVER
+# committed.  See data/README.md for how to recreate the data tree locally.
+# ───────────────────────────────────────────────────────────────────────────
+
+# ── Bulk public data (3 TB+; recreated by following data/README.md) ─────────
+# Tissue folders themselves stay tracked (so SOURCES.yaml / README.md commit);
+# only the sample-level subdirs (which hold the actual bytes) are ignored.
+data/xenium/*/*/
+# Census mirrors are date-stamped subfolders right under data/census/:
+data/census/*/
+# ...but keep top-level data/census/README.md (tracked by default since
+# only subdirs are ignored above):
+
+# ── Derived training artifacts (rebuilt by the pipeline) ────────────────────
+cellvit-training/trainingset/*/train/
+cellvit-training/trainingset/*/test/
+cellvit-training/trainingset/*/splits/
+cellvit-training/trainingset/*/labels/
+cellvit-training/trainingset/*/cache/
+cellvit-training/trainingset/*/cell_labels_*.csv
+cellvit-training/trainingset/*/label_map.yaml
+# Resolved (envsubst'd) training configs:
+cellvit-training/trainingset/*/train_configs/*/.fold_*.resolved.yaml
+
+# ── Trained heads & training logs (not committed; published to HF Hub) ──────
+cellvit-training/cellvit/CellViT-plus-plus/logs_local/
+cellvit-training/cellvit/CellViT-plus-plus/logs/
+cellvit-training/**/checkpoints/
+cellvit-training/**/wandb/
+cellvit-training/**/*.pth
+cellvit-training/**/*.ckpt
+
+# ── Vendored upstream + base weights (re-cloneable; instructions in cellvit/README.md) ──
+cellvit-training/cellvit/CellViT-plus-plus/
+cellvit-training/cellvit/models/
+cellvit-training/models/legacy/
+
+# ── QuPath projects (large, machine-local) ──────────────────────────────────
+cellvit-training/qprj/
+kurtorank/qprj/
+
+# ── Staging area (review-and-delete) ────────────────────────────────────────
+to-be-deleted/
+
+# ── KurtoRank: separate project, excluded from this repo ────────────────────
+kurtorank/
+
+# ── Python build / cache artifacts ──────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Conda / virtualenv ──────────────────────────────────────────────────────
+.conda/
+.venv/
+venv/
+env/
+
+# ── Editor / IDE ────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.ipynb_checkpoints/
+*.swp
+
+# ── OS noise ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── W&B / training run outputs ──────────────────────────────────────────────
+wandb/
+logs_local/
+*.log
+
+# ── Notebook outputs (keep notebooks; strip outputs at commit time) ─────────
+*.ipynb_checkpoints

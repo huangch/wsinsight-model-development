@@ -1,0 +1,78 @@
+logging:
+  mode: offline
+  project: cellvit-pan-tissue
+  notes: colorectal-hne-label-15class-SAM-H-x40
+  log_comment: colorectal-hne-sam-h-x40
+  wandb_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
+  log_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
+  level: Debug
+
+random_seed: 42
+gpu: 0
+
+data:
+  dataset: DetectionDataset
+  dataset_path: ${CELLVIT_TRAINING_ROOT}/trainingset/colorectal
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: 15
+  train_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/colorectal/splits/fold_0/train.csv
+  val_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/colorectal/splits/fold_0/val.csv
+  label_map:
+    0: basaloid_progenitor
+    1: malignant_epithelial
+    2: fibroblast_like
+    3: lymphocyte
+    4: macrophage_like
+    5: plasma_cell
+    6: epithelial
+    7: pericyte
+    8: endothelial
+    9: neutrophil
+    10: basophil
+    11: hematologic_blast
+    12: eosinophil
+    13: neuron
+    14: mast_cell
+
+cellvit_path: ${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth
+
+model:
+  hidden_dim: 256
+
+training:
+  cache_cell_dataset: true
+  batch_size: 64
+  epochs: 50
+  drop_rate: 0.1
+  optimizer: AdamW
+  optimizer_hyperparameter:
+    betas:
+      - 0.85
+      - 0.9
+    lr: 0.0003
+    weight_decay: 0.00002
+  early_stopping_patience: 20
+  mixed_precision: true
+  eval_every: 1
+  weighted_sampling: true
+  # Inverse-frequency weights (10 / class_percent, capped at 10):
+  # class  0 basaloid_progenitor   ~30.8%  -> 0.32
+  # class  1 malignant_epithelial  ~23.0%  -> 0.44
+  # class  2 fibroblast_like       ~19.2%  -> 0.52
+  # class  3 lymphocyte             ~7.5%  -> 1.33
+  # class  4 macrophage_like        ~5.0%  -> 1.99
+  # class  5 plasma_cell            ~3.7%  -> 2.68
+  # class  6 epithelial             ~3.0%  -> 3.28
+  # class  7 pericyte               ~2.4%  -> 4.21
+  # class  8 endothelial            ~3.7%  -> 2.69
+  # class  9 neutrophil             ~1.0%  -> 9.52
+  # class 10 basophil               ~0.3%  -> 10.00 (capped)
+  # class 11 hematologic_blast       0.0%  -> 10.00 (absent in tiles)
+  # class 12 eosinophil             ~0.04% -> 10.00 (capped)
+  # class 13 neuron                 ~0.06% -> 10.00 (capped)
+  # class 14 mast_cell              ~0.08% -> 10.00 (capped)
+  weight_list: [0.32, 0.44, 0.52, 1.33, 1.99, 2.68, 3.28, 4.21, 2.69, 9.52, 10.0, 10.0, 10.0, 10.0, 10.0]
+  scheduler:
+    scheduler_type: exponential
+    gamma: 0.95

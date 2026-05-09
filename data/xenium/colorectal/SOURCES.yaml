@@ -1,0 +1,27 @@
+# data/xenium/colorectal/SOURCES.yaml
+# Per-sample manifest for colorectal Xenium training data.
+# Mirror of the 'samples:' list in cellvit-training/tissue_configs/colorectal.yaml.
+#
+# Each entry:
+#   - dataset_name : human-readable 10x dataset name (search this on
+#                    https://www.10xgenomics.com/datasets to find the
+#                    download page).
+#   - he_image     : H&E .ome.tif filename (without extension), placed
+#                    one level above its outs/ folder.
+#   - relative_outs: path of the outs/ folder relative to data/xenium/colorectal/.
+#
+# Source: 10x Genomics — Xenium Datasets
+# License: 10x Genomics License (non-commercial research)
+
+samples:
+  - dataset_name:  "FFPE Human Colorectal Cancer Data with Human Immuno-Oncology Profiling Panel and Custom Add-on"
+    he_image:      "Xenium_V1_Human_Colorectal_Cancer_Addon_FFPE_he_image"
+    relative_outs: "FFPE Human Colorectal Cancer Data with Human Immuno-Oncology Profiling Panel and Custom Add-on/outs"
+
+  - dataset_name:  "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Cancer, pre-designed + add-on panel"
+    he_image:      "Xenium_V1_hColon_Cancer_Add_on_FFPE_he_image"
+    relative_outs: "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Cancer, pre-designed + add-on panel/outs"
+
+  - dataset_name:  "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed panel"
+    he_image:      "Xenium_V1_hColon_Non_diseased_Base_FFPE_he_image"
+    relative_outs: "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed panel/outs"

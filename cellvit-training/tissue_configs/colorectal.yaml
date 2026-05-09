@@ -1,0 +1,40 @@
+# Colorectal (CRC) Xenium sample inventory + H&E label mapping.
+#
+# Consumed by build_cell_labels.py (--tissue colorectal).
+# Label ordering is by total cell count across all CRC samples
+# (most frequent = 0), frozen for training stability.
+#
+# Only samples with an H&E .ome.tif are included (needed for tile extraction).
+# Two additional CRC outs/ dirs exist but have no H&E image, so they are
+# intentionally omitted:
+#   - Human Colon Preview Data (.../Cancer, pre-designed panel/outs   (no H&E)
+#   - Human Colon Preview Data (.../Non-diseased, pre-designed + add-on panel/outs (no H&E)
+
+xenium_base: ${PROJECT_ROOT}/data/xenium/colorectal
+out_dir:     ${PROJECT_ROOT}/cellvit-training/trainingset/colorectal
+
+# Frequency counts (across all 5 CRC samples) as inline comments.
+label_map:
+  basaloid_progenitor:   0   # 557,799
+  malignant_epithelial:  1   # 486,009
+  fibroblast_like:       2   # 413,213
+  lymphocyte:            3   # 217,959
+  macrophage_like:       4   # 156,275
+  plasma_cell:           5   # 126,504
+  epithelial:            6   #  81,270
+  pericyte:              7   #  62,017
+  endothelial:           8   #  45,436
+  neutrophil:            9   #  12,827
+  basophil:             10   #   4,253
+  hematologic_blast:    11   #   2,299
+  eosinophil:           12   #   1,126
+  neuron:               13   #   1,109
+  mast_cell:            14   #     850
+
+samples:
+  - ["Xenium_V1_Human_Colorectal_Cancer_Addon_FFPE_he_image",
+     "FFPE Human Colorectal Cancer Data with Human Immuno-Oncology Profiling Panel and Custom Add-on/outs"]
+  - ["Xenium_V1_hColon_Cancer_Add_on_FFPE_he_image",
+     "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Cancer, pre-designed + add-on panel/outs"]
+  - ["Xenium_V1_hColon_Non_diseased_Base_FFPE_he_image",
+     "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed panel/outs"]

@@ -1,0 +1,70 @@
+logging:
+  mode: offline
+  project: cellvit-pan-tissue
+  notes: breast-hne-label-11class-SAM-H-x40
+  log_comment: breast-hne-sam-h-x40
+  wandb_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
+  log_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
+  level: Debug
+
+random_seed: 42
+gpu: 0
+
+data:
+  dataset: DetectionDataset
+  dataset_path: ${CELLVIT_TRAINING_ROOT}/trainingset/breast
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: 11
+  train_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/breast/splits/fold_0/train.csv
+  val_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/breast/splits/fold_0/val.csv
+  label_map:
+    0: lymphocyte
+    1: malignant_epithelial
+    2: epithelial
+    3: plasma_cell
+    4: macrophage_like
+    5: fibroblast_like
+    6: pericyte
+    7: endothelial
+    8: basophil
+    9: adipocyte
+    10: mast_cell
+
+cellvit_path: ${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth
+
+model:
+  hidden_dim: 256
+
+training:
+  cache_cell_dataset: true
+  batch_size: 64
+  epochs: 50
+  drop_rate: 0.1
+  optimizer: AdamW
+  optimizer_hyperparameter:
+    betas:
+      - 0.85
+      - 0.9
+    lr: 0.0003
+    weight_decay: 0.00002
+  early_stopping_patience: 20
+  mixed_precision: true
+  eval_every: 1
+  weighted_sampling: true
+  # Inverse-frequency weights (weight ≈ 10 / class_percent):
+  # class 0  lymphocyte            ~9.1%  -> weight ~1.1
+  # class 1  malignant_epithelial ~32.9%  -> weight ~0.3
+  # class 2  epithelial           ~23.3%  -> weight ~0.4
+  # class 3  plasma_cell           ~2.1%  -> weight ~4.7
+  # class 4  macrophage_like       ~6.9%  -> weight ~1.4
+  # class 5  fibroblast_like      ~19.0%  -> weight ~0.5
+  # class 6  pericyte              ~2.4%  -> weight ~4.1
+  # class 7  endothelial           ~2.9%  -> weight ~3.4
+  # class 8  basophil              ~1.3%  -> weight ~7.7
+  # class 9  adipocyte             ~0.2%  -> weight ~10.0  (capped)
+  # class 10 mast_cell             ~0.8%  -> weight ~8.0   (estimated)
+  weight_list: [1.1, 0.3, 0.4, 4.7, 1.4, 0.5, 4.1, 3.4, 7.7, 10.0, 8.0]
+  scheduler:
+    scheduler_type: exponential
+    gamma: 0.95

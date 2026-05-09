@@ -1,0 +1,47 @@
+# data/xenium/breast/SOURCES.yaml
+# Per-sample manifest for breast Xenium training data.
+# Mirror of the 'samples:' list in cellvit-training/tissue_configs/breast.yaml.
+#
+# Each entry:
+#   - dataset_name : human-readable 10x dataset name (search this on
+#                    https://www.10xgenomics.com/datasets to find the
+#                    download page).
+#   - he_image     : H&E .ome.tif filename (without extension), placed
+#                    one level above its outs/ folder.
+#   - relative_outs: path of the outs/ folder relative to data/xenium/breast/.
+#
+# Source: 10x Genomics — Xenium Datasets
+# License: 10x Genomics License (non-commercial research)
+
+samples:
+  - dataset_name:  "FFPE Human Breast Cancer with 5K Human Pan Tissue and Pathways Panel plus 100 Custom Genes"
+    he_image:      "Xenium_Prime_Breast_Cancer_FFPE_he_image"
+    relative_outs: "FFPE Human Breast Cancer with 5K Human Pan Tissue and Pathways Panel plus 100 Custom Genes/outs"
+
+  - dataset_name:  "FFPE Human Breast using the Entire Sample Area/Replicate 1"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_Big_1_he_unaligned_image"
+    relative_outs: "FFPE Human Breast using the Entire Sample Area/Replicate 1/outs"
+
+  - dataset_name:  "FFPE Human Breast using the Entire Sample Area/Replicate 2"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_Big_2_he_unaligned_image"
+    relative_outs: "FFPE Human Breast using the Entire Sample Area/Replicate 2/outs"
+
+  - dataset_name:  "FFPE Human Breast with Custom Add-on Panel/Tissue sample 1"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_With_Addon_he_unaligned_image"
+    relative_outs: "FFPE Human Breast with Custom Add-on Panel/Tissue sample 1/outs"
+
+  - dataset_name:  "FFPE Human Breast with Custom Add-on Panel/Tissue sample 2"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_ILC_With_Addon_he_unaligned_image"
+    relative_outs: "FFPE Human Breast with Custom Add-on Panel/Tissue sample 2/outs"
+
+  - dataset_name:  "FFPE Human Breast with Pre-designed Panel/Tissue sample 1"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_he_image"
+    relative_outs: "FFPE Human Breast with Pre-designed Panel/Tissue sample 1/outs"
+
+  - dataset_name:  "FFPE Human Breast with Pre-designed Panel/Tissue sample 2"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_ILC_he_image"
+    relative_outs: "FFPE Human Breast with Pre-designed Panel/Tissue sample 2/outs"
+
+  - dataset_name:  "Xenium FFPE Human Breast with Custom Add-on Panel/Tissue sample 1 (IDC)"
+    he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_With_Addon_he_image"
+    relative_outs: "Xenium FFPE Human Breast with Custom Add-on Panel/Tissue sample 1 (IDC)/outs"

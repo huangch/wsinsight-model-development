@@ -1,0 +1,37 @@
+# data/xenium/lung/SOURCES.yaml
+# Per-sample manifest for lung Xenium data.
+#
+# This is a stub manifest enumerating the publicly-available 10x
+# Xenium samples present on disk. The training pipeline for this
+# tissue is NOT yet configured (no cellvit-training/tissue_configs/lung.yaml
+# exists). To enable training, author that YAML using the same
+# `samples:` list below as the source of truth.
+#
+# Each entry:
+#   - dataset_name : human-readable 10x dataset/sample folder name.
+#   - he_image     : H&E .ome.tif filename (without extension), placed
+#                    one level above its outs/ folder.
+#   - relative_outs: path of the outs/ folder relative to data/xenium/lung/.
+#                    May not yet exist on disk for samples that have
+#                    only the H&E image and no outs/ bundle.
+#
+# Source: 10x Genomics — Xenium Datasets
+#         https://www.10xgenomics.com/datasets?menu%5Bproducts.name%5D=Xenium
+# License: 10x Genomics License (non-commercial research)
+
+samples:
+  - dataset_name:  "FFPE Human Lung Cancer Data with Human Immuno-Oncology Profiling Panel and Custom Add-on"
+    he_image:      "Xenium_V1_Human_Lung_Cancer_Addon_FFPE_he_image"
+    relative_outs: "FFPE Human Lung Cancer Data with Human Immuno-Oncology Profiling Panel and Custom Add-on/outs"
+
+  - dataset_name:  "Post-Xenium Technical Note: Xenium v1 and Xenium Prime 5K for FFPE Human Lung Cancer/Experiment 1, Xenium v1"
+    he_image:      "Xenium_V1_Human_Lung_Cancer_FFPE_he_image"
+    relative_outs: "Post-Xenium Technical Note: Xenium v1 and Xenium Prime 5K for FFPE Human Lung Cancer/Experiment 1, Xenium v1/outs"
+
+  - dataset_name:  "Post-Xenium Technical Note: Xenium v1 and Xenium Prime 5K for FFPE Human Lung Cancer/Experiment 2, Xenium Prime 5K"
+    he_image:      "Xenium_Prime_Human_Lung_Cancer_FFPE_he_image"
+    relative_outs: "Post-Xenium Technical Note: Xenium v1 and Xenium Prime 5K for FFPE Human Lung Cancer/Experiment 2, Xenium Prime 5K/outs"
+
+  - dataset_name:  "Preview Data: FFPE Human Lung Cancer with Xenium Multimodal Cell Segmentation"
+    he_image:      "Xenium_V1_humanLung_Cancer_FFPE_he_image"
+    relative_outs: "Preview Data: FFPE Human Lung Cancer with Xenium Multimodal Cell Segmentation/outs"

@@ -1,0 +1,33 @@
+# data/xenium/kidney/SOURCES.yaml
+# Per-sample manifest for kidney Xenium data.
+#
+# This is a stub manifest enumerating the publicly-available 10x
+# Xenium samples present on disk. The training pipeline for this
+# tissue is NOT yet configured (no cellvit-training/tissue_configs/kidney.yaml
+# exists). To enable training, author that YAML using the same
+# `samples:` list below as the source of truth.
+#
+# Each entry:
+#   - dataset_name : human-readable 10x dataset/sample folder name.
+#   - he_image     : H&E .ome.tif filename (without extension), placed
+#                    one level above its outs/ folder.
+#   - relative_outs: path of the outs/ folder relative to data/xenium/kidney/.
+#                    May not yet exist on disk for samples that have
+#                    only the H&E image and no outs/ bundle.
+#
+# Source: 10x Genomics — Xenium Datasets
+#         https://www.10xgenomics.com/datasets?menu%5Bproducts.name%5D=Xenium
+# License: 10x Genomics License (non-commercial research)
+
+samples:
+  - dataset_name:  "Human Kidney Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/Kidney Cancer (PRCC)"
+    he_image:      "Xenium_V1_hKidney_cancer_section_he_image"
+    relative_outs: "Human Kidney Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/Kidney Cancer (PRCC)/outs"
+
+  - dataset_name:  "Human Kidney Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/Non-diseased Kidney"
+    he_image:      "Xenium_V1_hKidney_nondiseased_section_he_image"
+    relative_outs: "Human Kidney Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/Non-diseased Kidney/outs"
+
+  - dataset_name:  "Xenium In Situ Gene and Protein Expression data for FFPE Human Renal Cell Carcinoma"
+    he_image:      "Xenium_V1_Human_Kidney_FFPE_Protein_updated_he_image"
+    relative_outs: "Xenium In Situ Gene and Protein Expression data for FFPE Human Renal Cell Carcinoma/outs"

@@ -79,9 +79,8 @@ fixed and global — do not renumber per sample.
 | 10 | `mast_cell` |
 
 The same mapping is the source of truth in
-[`tissue_configs/breast.yaml`](tissue_configs/breast.yaml) (`label_map:`)
-and is mirrored to `trainingset/breast/label_map.yaml` by
-`build_cell_labels.py`. Per-class frequencies (used to set `weight_list:`)
+`trainingset/<tissue>/label_map.yaml`. Per-class frequencies (used to set
+`weight_list:`)
 are computed across the actual exported tiles and recorded as comments in
 [`trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml).
 
@@ -115,23 +114,41 @@ above (Section 4.1) is **fixed and global** — do not renumber per-sample.
 
 ---
 
-## 5. Label Join Pipeline (Python pre-processing)
+## 5. Label Join Pipeline (in QuPath)
 
-Before QuPath exports the label CSVs, build a `cell_id → (x_um, y_um, class_int)`
-lookup table from the three source files. This is implemented by
-[`pipeline/build_cell_labels.py`](pipeline/build_cell_labels.py):
+Cell labels are anchored to H&E nuclei, not to Xenium morphology (DAPI)
+centroids — the offset between the two modalities can be several µm due to
+fixation, tissue deformation and z-plane mismatch (this is the central
+point of the QuST paper). The join therefore happens **inside QuPath**:
+
+1. **Foreground annotation** — QuST → `PetesSimpleTissueDetection` per image.
+2. **H&E nuclear detection** — QuST → `StarDistCellNucleusDetection`,
+   restricted to the tissue annotation. Each detection's `PathClass` is
+   left unset at this stage.
+3. **Xenium cluster transfer** — QuST → `XeniumAnnotation`. Reads the
+   sample's `outs/analysis/clustering/.../clusters.csv` and assigns each
+   H&E detection the nearest Xenium cell's cluster id. After this step
+   every detection carries `PathClass.name = <cluster_id>` (e.g. `"1"`,
+   `"2"`, …).
+4. **Cluster → label remap** — run
+   [`qupath/load_mapping.groovy`](qupath/load_mapping.groovy) with the
+   sample's `celltype_assignment_<label_col>.csv` (2 columns:
+   `classification, cell_type`). PathClass becomes the label string
+   (`"tumor"`, `"lymphoid"`, …).
+5. **Save** the QuPath project so the relabelled detections persist into
+   each image's `.qpdata`.
+
+For batch CLI execution across every image in the project:
 
 ```bash
-python pipeline/build_cell_labels.py --tissue breast
-python pipeline/build_cell_labels.py --tissue colorectal
-python pipeline/build_cell_labels.py --config path/to/custom_tissue.yaml
+QuPath script -s -p ../data/qprj/project.qpproj \
+    -a /abs/path/celltype_assignment_pantissue_label.csv \
+    qupath/load_mapping.groovy
 ```
 
-It reads the tissue's [`tissue_configs/<tissue>.yaml`](tissue_configs/) for
-the sample list and `label_map`, joins the three Xenium files per sample,
-and emits one flat CSV per sample (`cell_id, x_um, y_um, class_int`) plus
-the canonical `trainingset/<tissue>/label_map.yaml`. The `${PROJECT_ROOT}`
-token in the config is expanded automatically.
+No Python pre-processing reads anything from inside the QuPath project.
+The int ↔ label-name mapping consumed at training time lives in
+`trainingset/<tissue>/label_map.yaml` and is hand-authored.
 
 ---
 
@@ -353,11 +370,10 @@ training:
 Notes:
 - All paths use `${CELLVIT_TRAINING_ROOT}` (a sibling of the project root) so
   the tree is portable across folder renames.
-- `log_comment` must equal `<tissue>-hne-<backbone-lower>`; the wrapper uses
+- `log_comment` must equal `<tissue>-<task>-<backbone-lower>`; the wrapper uses
   this string to glob for the run directory after training finishes.
-- `num_classes` and `label_map` must match `tissue_configs/<tissue>.yaml`
-  exactly (the same `label_map` is also written to
-  `trainingset/<tissue>/label_map.yaml` by `build_cell_labels.py`).
+- `num_classes` and `label_map` must match `trainingset/<tissue>/label_map.yaml`
+  exactly (the same mapping the QuPath export pipeline uses).
 
 ---
 
@@ -366,10 +382,10 @@ Notes:
 The Groovy script must perform the following steps:
 
 ### 12.1 Inputs
-- Path to `morphology.ome.tif` (opened as the current QuPath project entry)
-- Path to the pre-built cell label CSV: `cell_id, x_um, y_um, class_int`
-- Output directory root (e.g. `trainingset/breast/`)
-- `sample_tag` string (e.g. `breast_5k`)
+- An H&E image opened in the project, with QuST detections already carrying
+  pantissue label strings on their PathClass (post `load_mapping.groovy`)
+- Output directory root (e.g. `trainingset/pantissue/`) set in the script
+- `trainingset/<tissue>/label_map.yaml` (int ↔ label-name)
 - Split: `"train"` or `"test"`
 
 ### 12.2 Export parameters
@@ -384,6 +400,11 @@ TILE_SIZE_UM  = 256.0      // = TILE_SIZE_PX * EXPORT_MPP
 
 ### 12.3 Tile export loop (pseudocode)
 ```
+cells = [(roi.centroidX_px * slideMPP, roi.centroidY_px * slideMPP,
+          labelToInt[obj.PathClass.name])
+         for obj in getDetectionObjects()
+         if obj.PathClass != null and obj.PathClass.name in labelToInt]
+
 for row_index in 0..n_rows:
     for col_index in 0..n_cols:
         tile_x_um = col_index * STRIDE_UM
@@ -399,7 +420,7 @@ for row_index in 0..n_rows:
                          if tile_x_um <= c.x_um < tile_x_um + TILE_SIZE_UM
                          and tile_y_um <= c.y_um < tile_y_um + TILE_SIZE_UM]
 
-        if len(cells_in_tile) == 0: continue  // skip empty tiles
+        if len(cells_in_tile) < MIN_CELLS: continue  // skip near-empty tiles
 
         // Write label CSV
         with open("{output_dir}/{split}/labels/{sample_tag}_tile_{idx:04d}.csv", "w") as f:
@@ -446,12 +467,9 @@ Before handing the dataset to training, verify:
 
 ## 14. Reference Implementations
 
-- Python label-join: [`pipeline/build_cell_labels.py`](pipeline/build_cell_labels.py)
+- QuPath cluster→label remap: [`qupath/load_mapping.groovy`](qupath/load_mapping.groovy)
 - QuPath tile/label export: [`qupath/export_tiles.groovy`](qupath/export_tiles.groovy)
 - Train/val splits: [`pipeline/make_splits.py`](pipeline/make_splits.py)
-- Tissue YAML examples: [`tissue_configs/breast.yaml`](tissue_configs/breast.yaml),
-  [`tissue_configs/colorectal.yaml`](tissue_configs/colorectal.yaml)
 - Worked training configs:
-  [`trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml),
-  [`trainingset/colorectal/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/colorectal/train_configs/SAM-H-x40/fold_0.yaml)
+  [`trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml)
 

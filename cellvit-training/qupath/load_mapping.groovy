@@ -1,14 +1,35 @@
-// Script to read a CSV file and process each line
+/**
+ * load_mapping.groovy
+ * -------------------
+ * Replace the PathClass on every detection in the current image, using a
+ * 2-column CSV: first col = current PathClass name (typically a Xenium
+ * cluster id as written by QuST's XeniumAnnotation), second col = new
+ * PathClass name (a pantissue / hne label string).
+ *
+ * Usage:
+ *   CLI batch (headless, every image in the project):
+ *     QuPath script -s -p data/qprj/project.qpproj \
+ *         -a /path/to/celltype_assignment_pantissue_label.csv \
+ *         cellvit-training/qupath/load_mapping.groovy
+ *     # -s persists the new PathClasses into each image's .qpdata
+ *
+ *   GUI: just run the script and pick the CSV when prompted.
+ */
 import java.io.File
 import java.io.BufferedReader
 import java.io.FileReader
-import java.nio.file.Files
-import java.nio.charset.StandardCharsets
-// Ask user to select the CSV file
-def csvFile = qupath.lib.gui.dialogs.Dialogs.promptForFile("Select CSV file", null, "CSV files", ".csv")
-if (csvFile == null) {
-    println "No file selected, exiting..."
-    return
+
+// CSV path: prefer args[0] (CLI), fall back to file picker (GUI)
+def csvFile = null
+if (binding.hasVariable('args') && args != null && args.length > 0) {
+    csvFile = new File((String) args[0])
+    println "Using CSV from args[0]: ${csvFile.getAbsolutePath()}"
+} else {
+    csvFile = qupath.lib.gui.dialogs.Dialogs.promptForFile("Select CSV file", null, "CSV files", ".csv")
+    if (csvFile == null) {
+        println "No file selected, exiting..."
+        return
+    }
 }
 
 // Verify the file exists

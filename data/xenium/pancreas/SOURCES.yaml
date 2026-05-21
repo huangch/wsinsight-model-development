@@ -31,3 +31,11 @@ samples:
   - dataset_name:  "Pancreatic Cancer with Xenium Human Multi-Tissue and Cancer Panel"
     he_image:      "Xenium_V1_hPancreas_Cancer_Add_on_FFPE_he_image"
     relative_outs: "Pancreatic Cancer with Xenium Human Multi-Tissue and Cancer Panel/outs"
+
+  # Added 2026-05-20: previously off-roster (Dec-2025 stale kurtorank labels).
+  # H&E .ome.tif is not yet on disk; he_image stem is the expected 10x naming
+  # but `build_cell_labels.py` will skip these until the H&E is downloaded.
+  - dataset_name:  "Human Pancreas Preview Data (Xenium Human Multi-Tissue and Cancer Panel)"
+    he_image:      "Xenium_V1_hPancreas_nondiseased_section_he_image"
+    relative_outs: "Human Pancreas Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."

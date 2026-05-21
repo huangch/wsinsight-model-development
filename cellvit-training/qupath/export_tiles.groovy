@@ -1,13 +1,20 @@
 /**
  * export_tiles.groovy
  * -------------------
- * Export 1024×1024 px PNG tiles + per-tile cell label CSVs from a Xenium
- * H&E image for CellViT++ training.
+ * Export 1024×1024 px PNG tiles + per-tile cell label CSVs from an H&E image
+ * for CellViT++ training.
+ *
+ * Cell positions and labels come from QuPath DETECTION OBJECTS in the open
+ * image (post StarDist + QuST XeniumAnnotation + load_mapping.groovy).
+ * The class-name string on each detection's PathClass is mapped to a class_int
+ * via label_map.yaml (hand-authored canonical int ↔ label-name table).
  *
  * Requirements:
- *   - Open the sample's *_he_image.ome.tif (or *_he_unaligned_image.ome.tif)
- *     in QuPath before running.
- *   - SAMPLE_TAG and LABEL_CSV are derived automatically from the image filename.
+ *   - Open the image in QuPath; its .qpdata must already contain detections
+ *     whose PathClass names match keys in label_map.yaml (e.g. "tumor",
+ *     "lymphoid", …).
+ *   - label_map.yaml lives at ${OUTPUT_ROOT}/label_map.yaml.
+ *   - SAMPLE_TAG is derived automatically from the image filename.
  *   - Only set OUTPUT_ROOT and SPLIT below.
  *
  * The script is resumable: tiles whose PNG already exists are skipped.
@@ -59,21 +66,36 @@ if (Double.isNaN(slideMPP) || slideMPP <= 0) {
     return
 }
 
-// ── Derive SAMPLE_TAG and LABEL_CSV from the open image filename
+// ── Derive SAMPLE_TAG from the open image filename
 //    e.g. "Xenium_Prime_Breast_Cancer_FFPE_he_image.ome.tif" → "Xenium_Prime_Breast_Cancer_FFPE_he_image"
 def imageName = server.getMetadata().getName()
 def SAMPLE_TAG = imageName
     .replaceAll(/\s*-\s*Image\d+$/, "")   // strip Bio-Formats series suffix e.g. " - Image0"
     .replaceAll(/(?i)\.ome\.tif$/, "")
     .replaceAll(/(?i)\.tif$/, "")
-def LABEL_CSV  = "${OUTPUT_ROOT}/cell_labels_${SAMPLE_TAG}.csv"
 
-if (!new File(LABEL_CSV).exists()) {
-    println "ERROR: Label CSV not found: ${LABEL_CSV}"
-    println "Expected filename derived from open image: ${imageName}"
-    println "Run build_cell_labels.py first, or check that the correct image is open."
+// ── Load label_map.yaml  (int -> label-name)  →  invert to (label-name -> int)
+def LABEL_MAP_YAML = "${OUTPUT_ROOT}/label_map.yaml"
+def labelMapFile = new File(LABEL_MAP_YAML)
+if (!labelMapFile.exists()) {
+    println "ERROR: label_map.yaml not found: ${LABEL_MAP_YAML}"
+    println "Run/edit it by hand; it is the canonical int ↔ label-name table."
     return
 }
+def labelToInt = [:]
+labelMapFile.eachLine { line ->
+    def m = (line =~ /^\s*(\d+)\s*:\s*"?([^"#]+?)"?\s*(#.*)?$/)
+    if (m.find()) {
+        int ci = m.group(1).toInteger()
+        String nm = m.group(2).trim()
+        labelToInt[nm] = ci
+    }
+}
+if (labelToInt.isEmpty()) {
+    println "ERROR: no entries parsed from ${LABEL_MAP_YAML}"
+    return
+}
+println "Loaded ${labelToInt.size()} classes from label_map.yaml: ${labelToInt}"
 
 double ds = EXPORT_MPP / slideMPP    // QuPath downsample factor
 
@@ -89,7 +111,7 @@ if (AUG_ROT270) augmentations << ["_rot270", { img, cs, sz -> rot270(img, cs, sz
 println "=== export_tiles.groovy ==="
 println "Image      : ${imageName}"
 println "Sample tag : ${SAMPLE_TAG}"
-println "Label CSV  : ${LABEL_CSV}"
+println "Label map  : ${LABEL_MAP_YAML}"
 println "Slide size : ${server.getWidth()} × ${server.getHeight()} px"
 println "Slide MPP  : ${slideMPP} µm/px   Downsample: ${String.format('%.4f', ds)}"
 println "Split      : ${SPLIT}"
@@ -102,22 +124,40 @@ def lblDir = new File("${OUTPUT_ROOT}/${SPLIT}/labels")
 imgDir.mkdirs()
 lblDir.mkdirs()
 
-// ── Load cell label CSV  (header: cell_id, x_um, y_um, class_int)
-println "\nLoading cell labels from:\n  ${LABEL_CSV} ..."
-def labelFile = new File(LABEL_CSV)
-if (!labelFile.exists()) { println "ERROR: Label CSV not found: ${LABEL_CSV}"; return }
+// ── Load cells from QuPath DETECTION OBJECTS in the open image.
+//    Centroid is in full-res image pixels; convert to µm so the existing
+//    bucketing math (which works in µm) is reused unchanged.
+println "\nLoading cells from detection objects ..."
+def detections = getDetectionObjects()
+println "  ${detections.size()} detection objects in current image"
 
 def cells = []
-labelFile.withReader { reader ->
-    reader.readLine()   // skip header
-    String line
-    while ((line = reader.readLine()) != null) {
-        def p = line.split(",")
-        if (p.length < 4) continue
-        cells << [x: p[1].toDouble(), y: p[2].toDouble(), cls: p[3].toInteger()]
+int nSkipNoClass = 0
+int nSkipUnmapped = 0
+def unmappedClasses = [:].withDefault { 0 }
+detections.each { obj ->
+    def pc = obj.getPathClass()
+    if (pc == null) { nSkipNoClass++; return }
+    def ci = labelToInt.get(pc.getName())
+    if (ci == null) {
+        nSkipUnmapped++
+        unmappedClasses[pc.getName()]++
+        return
     }
+    def roi = obj.getROI()
+    cells << [x: roi.getCentroidX() * slideMPP,
+              y: roi.getCentroidY() * slideMPP,
+              cls: ci]
 }
-println "  ${cells.size()} cells loaded"
+println "  ${cells.size()} cells kept  (${nSkipNoClass} no PathClass, ${nSkipUnmapped} unmapped class)"
+if (!unmappedClasses.isEmpty()) {
+    println "  Unmapped PathClass names (not in label_map.yaml):"
+    unmappedClasses.each { k, v -> println "    ${k}: ${v}" }
+}
+if (cells.isEmpty()) {
+    println "ERROR: zero classifiable detections. Did StarDist + load_mapping.groovy run?"
+    return
+}
 
 // ── Pre-bucket cells by tile grid position
 //    A cell at (x_um, y_um) belongs to tile (col, row) when:

@@ -35,3 +35,21 @@ samples:
   - dataset_name:  "Preview Data: FFPE Human Lung Cancer with Xenium Multimodal Cell Segmentation"
     he_image:      "Xenium_V1_humanLung_Cancer_FFPE_he_image"
     relative_outs: "Preview Data: FFPE Human Lung Cancer with Xenium Multimodal Cell Segmentation/outs"
+
+  # Added 2026-05-20: previously off-roster (Dec-2025 stale kurtorank labels).
+  # H&E .ome.tif is not yet on disk; he_image stem is the expected 10x naming
+  # but `build_cell_labels.py` will skip these until the H&E is downloaded.
+  - dataset_name:  "Human Lung Cancer Preview Data (Xenium Human Multi-Tissue and Cancer Panel)"
+    he_image:      "Xenium_V1_hLung_cancer_section_he_image"
+    relative_outs: "Human Lung Cancer Preview Data (Xenium Human Multi-Tissue and Cancer Panel)/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."
+
+  - dataset_name:  "Xenium Human Lung Preview Data/Lung Cancer"
+    he_image:      "Xenium_Preview_Human_Lung_Cancer_With_Add_on_2_FFPE_he_image"
+    relative_outs: "Xenium Human Lung Preview Data/Lung Cancer/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."
+
+  - dataset_name:  "Xenium Human Lung Preview Data/Non-diseased Lung"
+    he_image:      "Xenium_Preview_Human_Non_diseased_Lung_With_Add_on_FFPE_he_image"
+    relative_outs: "Xenium Human Lung Preview Data/Non-diseased Lung/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."

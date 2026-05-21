@@ -11,24 +11,26 @@
 #   trainingset/<tissue>/label_map.yaml
 #
 # The <log_comment> baked into the training YAML must match
-# "<tissue>-hne-<backbone-lower>" for checkpoint discovery to work.
+# "<tissue>-<task>-<backbone-lower>" for checkpoint discovery to work.
 #
 # Usage:
-#   bash train.sh <tissue>                         # defaults: SAM-H-x40, fold_0
-#   bash train.sh <tissue> <backbone> <fold>
+#   bash train.sh <tissue>                                # defaults: SAM-H-x40, fold_0, hne
+#   bash train.sh <tissue> <backbone> <fold> <task>
 #
 # Examples:
 #   bash train.sh colorectal
-#   bash train.sh breast  SAM-H-x40 fold_0
+#   bash train.sh breast     SAM-H-x40 fold_0 hne
+#   bash train.sh pantissue  SAM-H-x40 fold_0 pantissue
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
-TISSUE="${1:?usage: train.sh <tissue> [backbone=SAM-H-x40] [fold=fold_0]}"
+TISSUE="${1:?usage: train.sh <tissue> [backbone=SAM-H-x40] [fold=fold_0] [task=hne]}"
 BACKBONE="${2:-SAM-H-x40}"
 FOLD="${3:-fold_0}"
+TASK="${4:-hne}"
 
-# Derive log_comment from tissue + backbone (lowercased, e.g. sam-h-x40).
-LOG_COMMENT="${TISSUE}-hne-$(echo "${BACKBONE}" | tr '[:upper:]' '[:lower:]')"
+# Derive log_comment from tissue + task + backbone (lowercased, e.g. sam-h-x40).
+LOG_COMMENT="${TISSUE}-${TASK}-$(echo "${BACKBONE}" | tr '[:upper:]' '[:lower:]')"
 
 # ── Anchor everything to this script's location ──────────────────────────────
 # Layout (relative to this script):

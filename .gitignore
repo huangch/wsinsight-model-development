@@ -22,7 +22,8 @@ cellvit-training/trainingset/*/splits/
 cellvit-training/trainingset/*/labels/
 cellvit-training/trainingset/*/cache/
 cellvit-training/trainingset/*/cell_labels_*.csv
-cellvit-training/trainingset/*/label_map.yaml
+# NOTE: label_map.yaml is the canonical int<->name source (see export_tiles.groovy).
+# It MUST stay tracked; do not add it to .gitignore.
 # Resolved (envsubst'd) training configs:
 cellvit-training/trainingset/*/train_configs/*/.fold_*.resolved.yaml
 
@@ -39,9 +40,17 @@ cellvit-training/cellvit/CellViT-plus-plus/
 cellvit-training/cellvit/models/
 cellvit-training/models/legacy/
 
-# ── QuPath projects (large, machine-local) ──────────────────────────────────
+# ── QuPath projects (large, machine-local; per-image .qpdata is huge) ───────
 cellvit-training/qprj/
 kurtorank/qprj/
+data/qprj/
+
+# ── Pipeline logs (machine-local) ───────────────────────────────────────────
+cellvit-training/_logs/
+
+# ── Quarantined / archived (machine-local, never committed) ────────────────
+cellvit-training/_to_be_deleted/
+cellvit-training/_archive_hne/
 
 # ── Staging area (review-and-delete) ────────────────────────────────────────
 to-be-deleted/
@@ -86,3 +95,4 @@ logs_local/
 
 # ── Notebook outputs (keep notebooks; strip outputs at commit time) ─────────
 *.ipynb_checkpoints
+.github/skills/

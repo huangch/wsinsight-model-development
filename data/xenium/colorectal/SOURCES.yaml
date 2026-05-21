@@ -25,3 +25,16 @@ samples:
   - dataset_name:  "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed panel"
     he_image:      "Xenium_V1_hColon_Non_diseased_Base_FFPE_he_image"
     relative_outs: "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed panel/outs"
+
+  # Added 2026-05-20: previously off-roster (Dec-2025 stale kurtorank labels).
+  # H&E .ome.tif is not yet on disk; he_image stem is the expected 10x naming
+  # but `build_cell_labels.py` will skip these until the H&E is downloaded.
+  - dataset_name:  "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Cancer, pre-designed panel"
+    he_image:      "Xenium_V1_hColon_Cancer_Base_FFPE_he_image"
+    relative_outs: "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Cancer, pre-designed panel/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."
+
+  - dataset_name:  "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed + add-on panel"
+    he_image:      "Xenium_V1_hColon_Non_diseased_Add_on_FFPE_he_image"
+    relative_outs: "Human Colon Preview Data (Xenium Human Colon Gene Expression Panel)/Non-diseased, pre-designed + add-on panel/outs"
+    notes:         "H&E .ome.tif not yet downloaded; kurtorank labels only."

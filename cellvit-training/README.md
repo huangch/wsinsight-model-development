@@ -5,35 +5,37 @@ backbone using QuST-derived Xenium cell-type labels. Produces the per-tissue
 TorchScript heads consumed by WSInsight's Model Zoo.
 
 The workflow is **tissue-agnostic**: anything that varies per tissue lives in
-[`tissue_configs/<tissue>.yaml`](tissue_configs/) and
-[`trainingset/<tissue>/`](trainingset/). The same wrappers train every tissue.
+and [`trainingset/<tissue>/label_map.yaml`](trainingset/). The same wrappers train every tissue.
 
 ## Layout
 
 ```
 cellvit-training/
 ├── pipeline/                # tissue-agnostic Python + bash drivers
-│   ├── build_cell_labels.py # Xenium outs/ → per-cell label CSVs
 │   ├── make_splits.py       # exported tiles → train/val splits
 │   ├── train.sh             # 4-step training wrapper
 │   ├── validate.sh          # re-run validation against a finished run
 │   └── validate_classifier.py
-├── tissue_configs/          # per-tissue inventory + label_map (source of truth)
-│   ├── breast.yaml
-│   └── colorectal.yaml
-├── qupath/                  # QuPath Groovy helpers (tile + label export)
-│   ├── export_tiles.groovy
-│   └── load_mapping.groovy
+├── qupath/                  # QuPath Groovy helpers (CLI-batch capable)
+│   ├── load_mapping.groovy  # cluster_id → label-name on detections
+│   └── export_tiles.groovy  # detections → tile PNG + per-tile CSV
 ├── trainingset/             # exported tiles + per-fold training configs
-│   ├── breast/
-│   └── colorectal/
+│   └── <tissue>/
+│       ├── label_map.yaml   # canonical int ↔ label-name table
+│       ├── train/{images,labels}/
+│       ├── splits/fold_0/{train,val}.txt
+│       └── train_configs/SAM-H-x40/fold_0.yaml
 ├── cellvit/                 # vendored CellViT-plus-plus + base weights
 │   ├── CellViT-plus-plus/
 │   └── models/CellViT-SAM-H-x40.pth
 ├── models/legacy/           # archived classifier checkpoints
-├── qprj/                    # QuPath projects used for label curation
 └── TRAININGSET_PREPARATION.md
 ```
+
+The QuPath project that holds the per-sample annotations (foreground,
+StarDist nuclei, Xenium cluster IDs) lives at `../data/qprj/project.qpproj`.
+It's the single source of truth for the H&E-anchored cell labels consumed
+by `export_tiles.groovy`.
 
 ## Path portability
 
@@ -53,52 +55,58 @@ edits — set `PYTHON=<...>` to override the interpreter if needed.
 
 ## End-to-end pipeline (per tissue)
 
-For a tissue named `<tissue>` (e.g. `breast`, `colorectal`):
+For a tissue named `<tissue>` (e.g. `pantissue`):
 
 ```bash
-# 0. (one-time) curate cell-type labels in QuPath; export per-sample
-#    cell_id → cell_type CSVs into the tissue's outs/ folder.
+# 0. (one-time) curate cell-type labels with kurtorank to produce
+#    celltype_assignment_pantissue_label.csv in each sample's outs/.
+#    Hand-author trainingset/<tissue>/label_map.yaml (int ↔ label-name).
 
-# 1. Build per-cell label CSVs from Xenium outs/ + tissue_configs/<tissue>.yaml
-python pipeline/build_cell_labels.py --tissue <tissue>
+# 1. (in QuPath) For each H&E image in data/qprj/project.qpproj:
+#      a. QuST → PetesSimpleTissueDetection (foreground annotation)
+#      b. QuST → StarDistCellNucleusDetection (nuclei in tissue mask)
+#      c. QuST → XeniumAnnotation (assign Xenium cluster_id to each detection)
+#    Then save the project.
 
-# 2. (in QuPath) open each <sample>_he_image.ome.tif and run
-#    qupath/export_tiles.groovy with OUTPUT_ROOT pointing at
-#    trainingset/<tissue>/   to produce 1024×1024 PNG tiles + label CSVs.
+# 2. Remap cluster_id → pantissue label on every detection (CLI batch):
+QuPath script -s -p ../data/qprj/project.qpproj \
+    -a /abs/path/celltype_assignment_pantissue_label.csv \
+    qupath/load_mapping.groovy
 
-# 3. Build train/val splits from the exported tiles
+# 3. Export tiles + per-tile cell CSVs (CLI batch):
+#    Edit OUTPUT_ROOT at top of export_tiles.groovy first.
+QuPath script -p ../data/qprj/project.qpproj qupath/export_tiles.groovy
+
+# 4. Build train/val splits from the exported tiles
 python pipeline/make_splits.py --tissue <tissue>
 
-# 4. Train head + auto-validate + export TorchScript (4 steps in one)
-bash pipeline/train.sh <tissue>                     # SAM-H-x40, fold_0
-bash pipeline/train.sh <tissue> SAM-H-x40 fold_0    # explicit form
+# 5. Train head + auto-validate + export TorchScript (4 steps in one)
+bash pipeline/train.sh <tissue>                       # SAM-H-x40, fold_0
+bash pipeline/train.sh <tissue> SAM-H-x40 fold_0 <task>   # explicit form
 
-# 5. Re-run only validation against a finished training run
+# 6. Re-run only validation against a finished training run
 bash pipeline/validate.sh <tissue>
 ```
 
 `train.sh` runs four steps in sequence: train the `LinearClassifier` head,
 locate `model_best.pth` under
-`cellvit/CellViT-plus-plus/logs_local/<TIMESTAMP>_<tissue>-hne-<backbone>/checkpoints/`,
+`cellvit/CellViT-plus-plus/logs_local/<TIMESTAMP>_<tissue>-<task>-<backbone>/checkpoints/`,
 emit a confusion matrix + classification report, and convert the checkpoint
 to TorchScript at 1024×1024.
 
 ## Adding a new tissue
 
-1. Create `tissue_configs/<tissue>.yaml` with `xenium_base`, `out_dir`,
-   `label_map` (frozen 0..N-1 integer assignment), and `samples` (list of
-   `[he_image_stem, relative_outs_path]` pairs). Use `${PROJECT_ROOT}` for
-   any path reference.
-2. Curate cell types in QuPath; ensure each sample's `outs/` contains
-   `celltype_assignment_hne_label.csv`, `clusters.csv`, and `cells.csv.gz`.
-3. Run `pipeline/build_cell_labels.py --tissue <tissue>` to produce the
-   per-cell CSVs and `trainingset/<tissue>/label_map.yaml`.
-4. Open each sample in QuPath and run `qupath/export_tiles.groovy` (set
-   `OUTPUT_ROOT` to `trainingset/<tissue>/`).
+1. Create `trainingset/<tissue>/label_map.yaml` (int ↔ label-name, 0..N-1
+   contiguous). This is the canonical mapping.
+2. Add the tissue's H&E images to `../data/qprj/project.qpproj`.
+3. Curate labels in QuPath (QuST tissue detection → StarDist → XeniumAnnotation →
+   `load_mapping.groovy` with the sample's
+   `celltype_assignment_<label_col>.csv`).
+4. Set `OUTPUT_ROOT` at the top of `qupath/export_tiles.groovy` to
+   `trainingset/<tissue>/`, then run it via the QuPath CLI.
 5. Author `trainingset/<tissue>/train_configs/SAM-H-x40/fold_0.yaml`
-   (copy from breast or colorectal; keep the `${CELLVIT_TRAINING_ROOT}`
-   tokens; set `num_classes`, `label_map`, and `weight_list` to match the
-   tissue's class distribution).
+   (copy from an existing tissue; set `num_classes`, `label_map`, and
+   `weight_list` to match the tissue's class distribution).
 6. `pipeline/make_splits.py --tissue <tissue>` then
    `pipeline/train.sh <tissue>`.
 

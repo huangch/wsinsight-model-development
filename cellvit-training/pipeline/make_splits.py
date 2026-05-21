@@ -3,7 +3,7 @@ make_splits.py
 --------------
 Build train/val splits from exported tiles.
 
-Run AFTER export_tiles.groovy (or build_cell_labels.py) has finished for all
+Run AFTER export_tiles.groovy has finished for all
 samples of the target tissue.
 
 Usage:

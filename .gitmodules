@@ -1,0 +1,4 @@
+[submodule "cellvit-training/cellvit/CellViT-plus-plus"]
+path = cellvit-training/cellvit/CellViT-plus-plus
+url = https://github.com/huangch/CellViT-plus-plus.git
+branch = wsinsight

@@ -26,8 +26,7 @@ cellvit-training/
 │       ├── splits/fold_0/{train,val}.txt
 │       └── train_configs/SAM-H-x40/fold_0.yaml
 ├── cellvit/                 # vendored CellViT-plus-plus + base weights
-│   ├── CellViT-plus-plus/   # upstream checkout (not a submodule; patched locally)
-│   ├── wsinsight-patches/   # patches + new TorchScript converter to apply on top of upstream
+│   ├── CellViT-plus-plus/
 │   └── models/CellViT-SAM-H-x40.pth
 └── models/legacy/           # archived classifier checkpoints
 ```

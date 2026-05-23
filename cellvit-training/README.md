@@ -4,8 +4,10 @@ H&E classifier-head training workflow that fine-tunes a CellViT-SAM-H-x40
 backbone using QuST-derived Xenium cell-type labels. Produces the per-tissue
 TorchScript heads consumed by WSInsight's Model Zoo.
 
-The workflow is **tissue-agnostic**: anything that varies per tissue lives in
-and [`trainingset/<tissue>/label_map.yaml`](trainingset/). The same wrappers train every tissue.
+The workflow is **tissue-agnostic**: anything that varies per tissue lives
+under [`trainingset/<tissue>/`](trainingset/) — specifically `label_map.yaml`
+and `train_configs/<backbone>/fold_*.yaml`. The same wrappers train every
+tissue.
 
 ## Layout
 
@@ -17,18 +19,21 @@ cellvit-training/
 │   ├── validate.sh          # re-run validation against a finished run
 │   └── validate_classifier.py
 ├── qupath/                  # QuPath Groovy helpers (CLI-batch capable)
-│   ├── load_mapping.groovy  # cluster_id → label-name on detections
-│   └── export_tiles.groovy  # detections → tile PNG + per-tile CSV
+│   ├── run_qust_pipeline.groovy  # tissue detection + StarDist + Xenium cluster transfer
+│   ├── load_mapping.groovy       # cluster_id → label-name on detections
+│   ├── reset_clusters.groovy     # revert PathClass to Xenium cluster_id (for re-apply)
+│   └── export_tiles.groovy       # detections → tile PNG + per-tile CSV
 ├── trainingset/             # exported tiles + per-fold training configs
 │   └── <tissue>/
 │       ├── label_map.yaml   # canonical int ↔ label-name table
 │       ├── train/{images,labels}/
-│       ├── splits/fold_0/{train,val}.txt
+│       ├── splits/fold_0/{train,val}.csv
 │       └── train_configs/SAM-H-x40/fold_0.yaml
 ├── cellvit/                 # vendored CellViT-plus-plus + base weights
-│   ├── CellViT-plus-plus/
+│   ├── CellViT-plus-plus/   # upstream checkout (patched locally; not committed)
 │   └── models/CellViT-SAM-H-x40.pth
-└── models/legacy/           # archived classifier checkpoints
+└── models/                  # promoted heads (yaml side-cars tracked; *.pth gitignored)
+    └── <head-name>/{config.yaml, label_map.yaml, model_best.pth}
 ```
 
 The QuPath project that holds the per-sample annotations (foreground,

@@ -14,32 +14,33 @@ License: [10x Genomics License](https://www.10xgenomics.com/legal/end-user-softw
 
 Every tissue folder contains a `SOURCES.yaml` listing every sample with
 its 10x dataset name, the `he_image` stem, and the on-disk relative path.
-These files are the canonical machine-readable sample list. For the two
-tissues with a configured training pipeline, the same list is mirrored
-in [`cellvit-training/tissue_configs/<tissue>.yaml`](../../cellvit-training/tissue_configs/).
+These files are the canonical machine-readable sample list. The QuPath
+project at `data/qprj/project.qpproj` is the runtime manifest — every
+image opened in it becomes an entry the headless wrappers iterate over.
+The int ↔ label-name mapping consumed at training time lives in
+[`cellvit-training/trainingset/<tissue>/label_map.yaml`](../../cellvit-training/trainingset/).
 
-| Tissue | Samples | Pipeline configured |
-|--------|--------:|:-------------------:|
-| [bone](bone/SOURCES.yaml)             | 3 |   |
-| [brain](brain/SOURCES.yaml)           | 1 |   |
-| [breast](breast/SOURCES.yaml)         | 8 | ✓ |
-| [cervix](cervix/SOURCES.yaml)         | 1 |   |
-| [colorectal](colorectal/SOURCES.yaml) | 3 | ✓ |
-| [heart](heart/SOURCES.yaml)           | 1 |   |
-| [kidney](kidney/SOURCES.yaml)         | 3 |   |
-| [liver](liver/SOURCES.yaml)           | 2 |   |
-| [lung](lung/SOURCES.yaml)             | 4 |   |
-| [lymph_node](lymph_node/SOURCES.yaml) | 1 |   |
-| [ovary](ovary/SOURCES.yaml)           | 2 |   |
-| [pancreas](pancreas/SOURCES.yaml)     | 3 |   |
-| [prostate](prostate/SOURCES.yaml)     | 1 |   |
-| [skin](skin/SOURCES.yaml)             | 5 |   |
-| [tonsil](tonsil/SOURCES.yaml)         | 2 |   |
+| Tissue | Samples |
+|--------|--------:|
+| [bone](bone/SOURCES.yaml)             | 3 |
+| [brain](brain/SOURCES.yaml)           | 1 |
+| [breast](breast/SOURCES.yaml)         | 8 |
+| [cervix](cervix/SOURCES.yaml)         | 1 |
+| [colorectal](colorectal/SOURCES.yaml) | 3 |
+| [heart](heart/SOURCES.yaml)           | 1 |
+| [kidney](kidney/SOURCES.yaml)         | 3 |
+| [liver](liver/SOURCES.yaml)           | 2 |
+| [lung](lung/SOURCES.yaml)             | 4 |
+| [lymph_node](lymph_node/SOURCES.yaml) | 1 |
+| [ovary](ovary/SOURCES.yaml)           | 2 |
+| [pancreas](pancreas/SOURCES.yaml)     | 3 |
+| [prostate](prostate/SOURCES.yaml)     | 1 |
+| [skin](skin/SOURCES.yaml)             | 5 |
+| [tonsil](tonsil/SOURCES.yaml)         | 2 |
 
-For tissues without a configured pipeline, the `SOURCES.yaml` enumerates
-the H&E samples already discoverable on disk; converting the tissue to
-"configured" requires authoring `cellvit-training/tissue_configs/<tissue>.yaml`
-(see the parent [README](../../cellvit-training/README.md#adding-a-new-tissue)).
+The currently trained head (`pantissue`) consumes every sample listed
+above. To add a new tissue to the pipeline, follow the parent
+[README](../../cellvit-training/README.md#adding-a-new-tissue).
 
 ## Tissue roadmap
 
@@ -69,7 +70,7 @@ data/xenium/<tissue>/<10x_dataset_name>/
 └── outs/
     ├── cells.csv.gz                                                     # required
     ├── analysis/clustering/gene_expression_graphclust/clusters.csv     # required
-    ├── celltype_assignment_hne_label.csv                               # produced by `kurtorank annotate`
+    ├── celltype_assignment_<tissue>_label.csv                       # produced by `kurtorank annotate`
     └── ...                                                              # other standard 10x outputs
 ```
 
@@ -90,8 +91,8 @@ curl -L -o outs.zip                                            "<URL_OUTS>"
 # 2. Unzip the outs/ bundle in place.
 unzip outs.zip && rm outs.zip
 
-# 3. (per sample) annotate cell types — produces outs/celltype_assignment_hne_label.csv
-kurtorank annotate --xenium-outs outs/
+# 3. (per sample) annotate cell types — produces outs/celltype_assignment_<tissue>_label.csv
+kurtorank annotate --xenium-dir outs/ --tissue-type ${TISSUE}
 ```
 
 The 10x download URLs are not pinned here because 10x rotates CDN paths;

@@ -9,6 +9,12 @@ single-cell heads.
 
 ## Sub-areas
 
+- [`kurtorank/`](kurtorank/) — installable Python package that produces the
+  per-cluster cell-type assignment CSV (`celltype_assignment_<tissue>_label.csv`)
+  consumed by the QuPath label-transfer step. Ranks markers against
+  CELLxGENE Census and annotates Xenium samples; runs upstream of the
+  training pipeline.
+
 - [`cellvit-training/`](cellvit-training/) — H&E classifier-head training
   workflow that fine-tunes CellViT-SAM-H-x40 from QuST-derived Xenium labels.
   Driven by the tissue-agnostic [`pipeline/train.sh`](cellvit-training/pipeline/train.sh)

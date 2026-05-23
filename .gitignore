@@ -36,9 +36,7 @@ cellvit-training/**/*.pth
 cellvit-training/**/*.ckpt
 
 # ── Vendored upstream + base weights (re-cloneable; instructions in cellvit/README.md) ──
-cellvit-training/cellvit/CellViT-plus-plus/
 cellvit-training/cellvit/models/
-cellvit-training/models/legacy/
 
 # ── QuPath projects (large, machine-local; per-image .qpdata is huge) ───────
 cellvit-training/qprj/
@@ -52,7 +50,6 @@ cellvit-training/_logs/
 # Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).
 _to_be_deleted/
 **/_to_be_deleted/
-cellvit-training/_archive_hne/
 
 # ── Staging area (review-and-delete) ────────────────────────────────────────
 to-be-deleted/

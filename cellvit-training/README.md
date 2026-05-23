@@ -62,16 +62,21 @@ For a tissue named `<tissue>` (e.g. `pantissue`):
 #    celltype_assignment_pantissue_label.csv in each sample's outs/.
 #    Hand-author trainingset/<tissue>/label_map.yaml (int ↔ label-name).
 
-# 1. (in QuPath) For each H&E image in data/qprj/project.qpproj:
-#      a. QuST → PetesSimpleTissueDetection (foreground annotation)
-#      b. QuST → StarDistCellNucleusDetection (nuclei in tissue mask)
-#      c. QuST → XeniumAnnotation (assign Xenium cluster_id to each detection)
-#    Then save the project.
+# 1. QuST detection + Xenium cluster transfer (headless CLI batch over every
+#    image in the QuPath project). Runs PetesSimpleTissueDetection +
+#    StarDistCellNucleusDetection + XeniumAnnotation in one go:
+QuPath script -s -p ../data/qprj/project.qpproj \
+    qupath/run_qust_pipeline.groovy
 
 # 2. Remap cluster_id → pantissue label on every detection (CLI batch):
 QuPath script -s -p ../data/qprj/project.qpproj \
     -a /abs/path/celltype_assignment_pantissue_label.csv \
     qupath/load_mapping.groovy
+
+#    (To re-apply an updated celltype_assignment_*.csv without re-running
+#     tissue detection + StarDist, run qupath/reset_clusters.groovy first to
+#     revert PathClass back to the Xenium cluster_id, then re-run
+#     load_mapping.groovy with the new CSV.)
 
 # 3. Export tiles + per-tile cell CSVs (CLI batch):
 #    Edit OUTPUT_ROOT at top of export_tiles.groovy first.
@@ -99,9 +104,9 @@ to TorchScript at 1024×1024.
 1. Create `trainingset/<tissue>/label_map.yaml` (int ↔ label-name, 0..N-1
    contiguous). This is the canonical mapping.
 2. Add the tissue's H&E images to `../data/qprj/project.qpproj`.
-3. Curate labels in QuPath (QuST tissue detection → StarDist → XeniumAnnotation →
-   `load_mapping.groovy` with the sample's
-   `celltype_assignment_<label_col>.csv`).
+3. Curate labels (headless): `qupath/run_qust_pipeline.groovy` →
+   `qupath/load_mapping.groovy` with the sample's
+   `celltype_assignment_<tissue>_label.csv`.
 4. Set `OUTPUT_ROOT` at the top of `qupath/export_tiles.groovy` to
    `trainingset/<tissue>/`, then run it via the QuPath CLI.
 5. Author `trainingset/<tissue>/train_configs/SAM-H-x40/fold_0.yaml`

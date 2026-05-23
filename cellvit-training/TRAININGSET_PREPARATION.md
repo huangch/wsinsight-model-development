@@ -2,7 +2,10 @@
 
 This document is the complete specification for preparing a CellViT++ classifier
 training set from 10x Xenium H&E data using QuPath. It is tissue-agnostic;
-breast is used throughout as the running example.
+**`pantissue`** (12-class, pan-tissue) is used throughout as the running
+example because that is the head currently set up in this repo. Earlier
+breast / colorectal 11-class setups follow the same layout — only
+`label_map.yaml`, `num_classes`, and `weight_list` differ.
 
 The surrounding workflow (Python helpers, training wrappers, tissue config
 format) is described in [README.md](README.md). This file is the format spec
@@ -31,7 +34,7 @@ All input files are under each sample's `outs/` folder.
 | `morphology.ome.tif` | Full H&E whole-slide image (OME-TIFF). **This is the image to open in QuPath.** Do NOT use `morphology_focus/` files (those are stain channels). |
 | `cells.csv.gz` | Per-cell: `cell_id`, `x_centroid` (µm), `y_centroid` (µm), plus QC columns. Coordinates are in the Xenium tissue coordinate space (microns). |
 | `analysis/clustering/gene_expression_graphclust/clusters.csv` | Per-cell: `Barcode` (= `cell_id`), `Cluster` (integer 1-based). |
-| `celltype_assignment_hne_label.csv` | Per-cluster: `classification` (cluster int), `cell_type` (string). Used to map Cluster → cell type label. |
+| `celltype_assignment_<tissue>_label.csv` | Per-cluster: `classification` (cluster int), `cell_type` (string). Used to map Cluster → cell type label. For `pantissue` the file is `celltype_assignment_pantissue_label.csv`. |
 
 ### Coordinate system
 - `x_centroid` and `y_centroid` in `cells.csv.gz` are in **microns** in the Xenium slide coordinate space.
@@ -56,61 +59,45 @@ All input files are under each sample's `outs/` folder.
 
 ---
 
-## 4. Cell-Type Label Mapping (Breast)
+## 4. Cell-Type Label Mapping (`pantissue`)
 
-### 4.1 Recommended label scheme: `hne_label` (11 classes)
+### 4.1 Pan-tissue label scheme: 12 classes
 
-This is the primary label set (`celltype_assignment_hne_label.csv`).
-Use this for training unless stated otherwise. The integer assignment is
+This is the primary label set produced by KurtoRank's `pantissue` profile
+(`celltype_assignment_pantissue_label.csv`). The integer assignment is
 fixed and global — do not renumber per sample.
 
 | Integer (`class_int`) | `cell_type` string |
 |---|---|
-| 0 | `lymphocyte` |
-| 1 | `malignant_epithelial` |
+| 0 | `lymphoid` |
+| 1 | `other_stromal_mesenchymal` |
 | 2 | `epithelial` |
-| 3 | `plasma_cell` |
-| 4 | `macrophage_like` |
-| 5 | `fibroblast_like` |
-| 6 | `pericyte` |
-| 7 | `endothelial` |
-| 8 | `basophil` |
-| 9 | `adipocyte` |
-| 10 | `mast_cell` |
+| 3 | `tumor` |
+| 4 | `myeloid` |
+| 5 | `endothelial` |
+| 6 | `neural` |
+| 7 | `plasma` |
+| 8 | `other_granulocyte` |
+| 9 | `fibroblast` |
+| 10 | `neutrophil` |
+| 11 | `mast` |
 
 The same mapping is the source of truth in
-`trainingset/<tissue>/label_map.yaml`. Per-class frequencies (used to set
-`weight_list:`)
-are computed across the actual exported tiles and recorded as comments in
-[`trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/breast/train_configs/SAM-H-x40/fold_0.yaml).
+[`trainingset/pantissue/label_map.yaml`](trainingset/pantissue/label_map.yaml).
+Per-class frequencies (used to set `weight_list:`) are computed across the
+actual exported tiles and recorded as comments in
+[`trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml).
 
 > Class integers must be **0-indexed** and **consecutive**. The value in the label
 > CSV is always the integer, not the string.
 
-### 4.2 Alternative label scheme: `pannuke_label` (4 classes)
+### 4.2 Earlier breast 11-class scheme
 
-Provided in `celltype_assignment_pannuke_label.csv`. Compatible with the existing
-`checkpoints/classifier/sam-h/pannuke.pth` classifier head.
-
-| Integer | `cell_type` string | Breast frequency |
-|---|---|---|
-| 0 | `neoplastic` | 22.7% |
-| 1 | `inflammatory` | 43.6% |
-| 2 | `connective` | 18.1% |
-| 3 | `epithelial` | 15.6% |
-
-### 4.3 Full label inventory per sample (breast, `hne_label`)
-
-The union of all cell type labels seen across all 8 breast Xenium samples:
-
-```
-adipocyte, basophil, endothelial, epithelial, fibroblast_like,
-lymphocyte, macrophage_like, malignant_epithelial, mast_cell,
-pericyte, plasma_cell
-```
-
-Not every label appears in every sample. The label map integer assignment
-above (Section 4.1) is **fixed and global** — do not renumber per-sample.
+Earlier breast-only training (now retired; head archived) used an
+11-class `hne_label` scheme: `lymphocyte, malignant_epithelial,
+epithelial, plasma_cell, macrophage_like, fibroblast_like, pericyte,
+endothelial, basophil, adipocyte, mast_cell`. The `pantissue` scheme above
+is the recommended replacement.
 
 ---
 
@@ -130,21 +117,37 @@ point of the QuST paper). The join therefore happens **inside QuPath**:
    H&E detection the nearest Xenium cell's cluster id. After this step
    every detection carries `PathClass.name = <cluster_id>` (e.g. `"1"`,
    `"2"`, …).
+
+Steps 1–3 are batched headless across every image in the QuPath project by
+[`qupath/run_qust_pipeline.groovy`](qupath/run_qust_pipeline.groovy):
+
+```bash
+QuPath script -s -p data/qprj/project.qpproj \
+    cellvit-training/qupath/run_qust_pipeline.groovy
+```
+
 4. **Cluster → label remap** — run
    [`qupath/load_mapping.groovy`](qupath/load_mapping.groovy) with the
-   sample's `celltype_assignment_<label_col>.csv` (2 columns:
+   sample's `celltype_assignment_<tissue>_label.csv` (2 columns:
    `classification, cell_type`). PathClass becomes the label string
    (`"tumor"`, `"lymphoid"`, …).
 5. **Save** the QuPath project so the relabelled detections persist into
-   each image's `.qpdata`.
+   each image's `.qpdata` (the `-s` flag does this for the headless
+   scripts above).
 
 For batch CLI execution across every image in the project:
 
 ```bash
-QuPath script -s -p ../data/qprj/project.qpproj \
+QuPath script -s -p data/qprj/project.qpproj \
     -a /abs/path/celltype_assignment_pantissue_label.csv \
-    qupath/load_mapping.groovy
+    cellvit-training/qupath/load_mapping.groovy
 ```
+
+To re-apply an updated `celltype_assignment_*.csv` without re-running
+tissue detection + StarDist, use
+[`qupath/reset_clusters.groovy`](qupath/reset_clusters.groovy) first to
+revert each detection's `PathClass` back to its Xenium cluster id, then
+run `load_mapping.groovy` with the new CSV.
 
 No Python pre-processing reads anything from inside the QuPath project.
 The int ↔ label-name mapping consumed at training time lives in
@@ -155,15 +158,15 @@ The int ↔ label-name mapping consumed at training time lives in
 ## 6. Output Directory Structure
 
 ```
-trainingset/breast/
+trainingset/pantissue/
 ├── train/
 │   ├── images/
-│   │   ├── breast_5k_tile_0042.png
-│   │   ├── breast_5k_tile_0043.png
+│   │   ├── <sample_tag>_tile_0042.png
+│   │   ├── <sample_tag>_tile_0043.png
 │   │   └── ...
 │   └── labels/
-│       ├── breast_5k_tile_0042.csv
-│       ├── breast_5k_tile_0043.csv
+│       ├── <sample_tag>_tile_0042.csv
+│       ├── <sample_tag>_tile_0043.csv
 │       └── ...
 ├── test/
 │   ├── images/
@@ -194,21 +197,10 @@ as the `split` parameter in the training config.
 {sample_tag}_tile_{tile_index:04d}.png
 ```
 
-Examples of `sample_tag` for the 8 breast samples:
-
-| Sample folder | Suggested `sample_tag` |
-|---|---|
-| `FFPE Human Breast Cancer with 5K Human Pan Tissue and Pathways Panel plus 100 Custom Genes` | `breast_5k` |
-| `FFPE Human Breast using the Entire Sample Area/Replicate 1` | `breast_esa_r1` |
-| `FFPE Human Breast using the Entire Sample Area/Replicate 2` | `breast_esa_r2` |
-| `FFPE Human Breast with Custom Add-on Panel/Tissue sample 1` | `breast_custom_s1` |
-| `FFPE Human Breast with Custom Add-on Panel/Tissue sample 2` | `breast_custom_s2` |
-| `FFPE Human Breast with Pre-designed Panel/Tissue sample 1` | `breast_pre_s1` |
-| `FFPE Human Breast with Pre-designed Panel/Tissue sample 2` | `breast_pre_s2` |
-| `Xenium FFPE Human Breast with Custom Add-on Panel/Tissue sample 1 (IDC)` | `breast_idc_s1` |
-
-The tile image and its label CSV must share the **same stem** (filename without
-extension).
+The `sample_tag` is derived by `export_tiles.groovy` from the image name
+in the QuPath project. It must be unique across all samples that feed
+into the same tissue's training set; the tile image and its label CSV
+must share the **same stem** (filename without extension).
 
 ---
 
@@ -224,7 +216,7 @@ x_pixel, y_pixel, class_int
 - `y_pixel`: integer, row of the cell centroid **within this tile** in pixels at 0.25 MPP.
 - `class_int`: integer class index from Section 4.1.
 
-**Example `breast_5k_tile_0042.csv`:**
+**Example `<sample_tag>_tile_0042.csv`:**
 ```
 46,7,2
 191,100,0
@@ -256,9 +248,9 @@ y_pixel = round((cell_y_um - tile_origin_y_um) / 0.25)
 tile stem per line, **no header**:
 
 ```
-breast_5k_tile_0001
-breast_5k_tile_0002
-breast_5k_tile_0005
+<sample_tag>_tile_0001
+<sample_tag>_tile_0002
+<sample_tag>_tile_0005
 ...
 ```
 
@@ -271,21 +263,26 @@ breast_5k_tile_0005
 
 ## 10. Label Map File
 
-`label_map.yaml` — a YAML file at the dataset root:
+`label_map.yaml` — a YAML file at the dataset root. For `pantissue`:
 
 ```yaml
-0: "lymphocyte"
-1: "malignant_epithelial"
+0: "lymphoid"
+1: "other_stromal_mesenchymal"   # was: stromal
 2: "epithelial"
-3: "plasma_cell"
-4: "macrophage_like"
-5: "fibroblast_like"
-6: "pericyte"
-7: "endothelial"
-8: "basophil"
-9: "adipocyte"
-10: "mast_cell"
+3: "tumor"
+4: "myeloid"
+5: "endothelial"
+6: "neural"
+7: "plasma"
+8: "other_granulocyte"           # was: granulocyte
+9: "fibroblast"
+10: "neutrophil"
+11: "mast"
 ```
+
+This file is hand-authored and tracked in git — it is the single int ↔
+label-name source consumed by both `qupath/export_tiles.groovy` and the
+training config below.
 
 ---
 
@@ -295,23 +292,24 @@ After the dataset is prepared, training is launched with the tissue-agnostic
 wrapper:
 
 ```bash
-bash pipeline/train.sh breast               # SAM-H-x40, fold_0
-bash pipeline/train.sh breast SAM-H-x40 fold_0
+bash pipeline/train.sh pantissue              # SAM-H-x40, fold_0
+bash pipeline/train.sh pantissue SAM-H-x40 fold_0
 ```
 
 The wrapper exports `${PROJECT_ROOT}` and `${CELLVIT_TRAINING_ROOT}`,
 materializes the tokenized YAML at
 `trainingset/<tissue>/train_configs/<backbone>/.<fold>.resolved.yaml` via
-`envsubst`, then invokes `cellvit/train_cell_classifier_head.py`.
+`envsubst`, then invokes
+`cellvit/CellViT-plus-plus/cellvit/train/train_cell_classifier.py`.
 
-The authoring template (used by both breast and colorectal) is:
+The authoring template (currently used for pantissue) is:
 
 ```yaml
 logging:
   mode: offline
   project: cellvit-pan-tissue
-  notes: breast-hne-label-11class-SAM-H-x40
-  log_comment: breast-hne-sam-h-x40         # MUST be "<tissue>-hne-<backbone-lower>"
+  notes: pantissue-pantissue-label-12class-SAM-H-x40
+  log_comment: pantissue-pantissue-sam-h-x40   # MUST be "<tissue>-<task>-<backbone-lower>"
   wandb_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
   log_dir:   ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
   level: Debug
@@ -321,24 +319,25 @@ gpu: 0
 
 data:
   dataset: DetectionDataset
-  dataset_path:   ${CELLVIT_TRAINING_ROOT}/trainingset/breast
+  dataset_path:   ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue
   normalize_stains_train: false
   normalize_stains_val: false
-  num_classes: 11
-  train_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/breast/splits/fold_0/train.csv
-  val_filelist:   ${CELLVIT_TRAINING_ROOT}/trainingset/breast/splits/fold_0/val.csv
+  num_classes: 12
+  train_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue/splits/fold_0/train.csv
+  val_filelist:   ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue/splits/fold_0/val.csv
   label_map:
-    0: lymphocyte
-    1: malignant_epithelial
+    0: lymphoid
+    1: other_stromal_mesenchymal
     2: epithelial
-    3: plasma_cell
-    4: macrophage_like
-    5: fibroblast_like
-    6: pericyte
-    7: endothelial
-    8: basophil
-    9: adipocyte
-    10: mast_cell
+    3: tumor
+    4: myeloid
+    5: endothelial
+    6: neural
+    7: plasma
+    8: other_granulocyte
+    9: fibroblast
+    10: neutrophil
+    11: mast
 
 cellvit_path: ${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth
 
@@ -361,7 +360,9 @@ training:
   weighted_sampling: true        # important: class imbalance is severe
   # Inverse-frequency weights (weight ≈ 10 / class_percent), capped at 10.
   # Re-derive per tissue from the actual exported-tile class distribution.
-  weight_list: [1.1, 0.3, 0.4, 4.7, 1.4, 0.5, 4.1, 3.4, 7.7, 10.0, 8.0]
+  # See trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml for the
+  # current pantissue values.
+  weight_list: [...]
   scheduler:
     scheduler_type: exponential
     gamma: 0.95
@@ -458,7 +459,8 @@ Before handing the dataset to training, verify:
 - [ ] Every PNG in `train/images/` has a matching CSV in `train/labels/` with the same stem
 - [ ] All CSV files have no header row, exactly 3 integer columns per row
 - [ ] All `x_pixel` and `y_pixel` values are in range [0, 1023]
-- [ ] All `class_int` values are in range [0, 10]
+- [ ] All `class_int` values are in range [0, N-1] (`N` = number of classes in
+      `label_map.yaml`; 12 for `pantissue`, 11 for the retired breast scheme)
 - [ ] `splits/fold_0/train.csv` and `val.csv` contain only stems that exist in `train/images/`
 - [ ] `label_map.yaml` is present at the dataset root
 - [ ] No tile stem appears in both train and val

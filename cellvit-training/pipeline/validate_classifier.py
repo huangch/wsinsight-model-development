@@ -410,8 +410,9 @@ def main():
                              "Defaults to <checkpoint_dir>/validation/.")
     parser.add_argument("--device", default=None,
                         help="Torch device, e.g. 'cuda' or 'cpu'. Defaults to auto.")
-    parser.add_argument("--batch-size", type=int, default=64,
-                        help="DataLoader batch size.")
+    parser.add_argument("--batch-size", type=int, default=8,
+                        help="DataLoader batch size. SAM-H at 1024x1024 is "
+                             "attention-heavy; 8 fits on 80 GB A100/H100.")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers.")
     args = parser.parse_args()

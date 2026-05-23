@@ -16,12 +16,18 @@ data/
 └── census/         (~1.5 TB)   local CELLxGENE Census SOMA mirror
 ```
 
-The on-disk paths must match what the tissue configs expect:
+The on-disk paths must match what the pipeline expects:
 
-- [`cellvit-training/tissue_configs/<tissue>.yaml`](../cellvit-training/tissue_configs/)
-  → `xenium_base: ${PROJECT_ROOT}/data/xenium/<tissue>` plus a `samples:` list
-  of `[he_image_stem, relative_outs_path]` pairs (the canonical sample
-  manifest).
+- Each Xenium sample lives at
+  `data/xenium/<tissue>/<dataset_folder_name>/` with `outs/` plus the H&E
+  `*.ome.tif` next to it (see §1 below).
+- The canonical per-sample manifest is the **QuPath project** at
+  `data/qprj/project.qpproj`: every image opened in it becomes an entry
+  the headless QuPath wrappers iterate over. The QuPath project is
+  git-ignored (large `.qpdata` files).
+- The int ↔ label-name table consumed at training time is
+  `cellvit-training/trainingset/<tissue>/label_map.yaml` (hand-authored,
+  tracked in git).
 - KurtoRank → `data/census/<YYYY-MM-DD>/` (a SOMA mirror at a pinned date).
 
 If your filesystem layout differs, set the `PROJECT_ROOT` environment
@@ -48,11 +54,12 @@ data/xenium/<tissue>/<dataset_folder_name>/
 └── outs/
     ├── cells.csv.gz
     ├── analysis/clustering/gene_expression_graphclust/clusters.csv
-    ├── celltype_assignment_hne_label.csv      # see Note below
+    ├── celltype_assignment_<tissue>_label.csv  # see Note below (e.g. pantissue)
     └── …  (other 10x outputs)
 ```
 
-> **Note on `celltype_assignment_hne_label.csv`:** This file is *not* part of
+> **Note on `celltype_assignment_<tissue>_label.csv`:** This file is *not*
+> part of
 > the standard 10x release. It is produced by the `kurtorank annotate` CLI
 > (see [`kurtorank/`](../kurtorank/README.md)) from `cell_feature_matrix.h5`.
 > Either run KurtoRank on each sample, or obtain the pre-computed file from
@@ -75,14 +82,16 @@ download recipe.
 
 ## Verifying the layout
 
-After fetching, confirm the pipeline can discover every sample:
+After fetching, confirm the pipeline can discover every sample by opening
+the QuPath project and listing its images:
 
 ```bash
-# breast
-python cellvit-training/pipeline/build_cell_labels.py --tissue breast
-# colorectal
-python cellvit-training/pipeline/build_cell_labels.py --tissue colorectal
+QuPath script -p data/qprj/project.qpproj -e 'getQuPath().getProject().getImageList().each { println it.getImageName() }'
 ```
 
-Each run prints one line per sample as it processes it; missing files are
-reported with a clear error.
+Every `*.ome.tif` you placed under `data/xenium/<tissue>/` should appear
+in the output. The headless wrappers
+(`cellvit-training/qupath/run_qust_pipeline.groovy`,
+`load_mapping.groovy`, `export_tiles.groovy`) discover each sample's
+`outs/` directory from the image URI — no separate manifest file is
+needed.

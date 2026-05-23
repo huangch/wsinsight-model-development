@@ -1,0 +1,88 @@
+diff --git a/cellvit/inference/inference_disk.py b/cellvit/inference/inference_disk.py
+index fdcab97..e29dad4 100644
+--- a/cellvit/inference/inference_disk.py
++++ b/cellvit/inference/inference_disk.py
+@@ -46,6 +46,7 @@ from cellvit.models.cell_segmentation.cellvit import CellViT
+ from cellvit.models.cell_segmentation.cellvit_256 import CellViT256
+ from cellvit.models.cell_segmentation.cellvit_sam import CellViTSAM
+ from cellvit.models.cell_segmentation.cellvit_uni import CellViTUNI
++from cellvit.models.cell_segmentation.cellvit_virchow import CellViTVirchow
+ from cellvit.utils.logger import Logger
+ from cellvit.utils.tools import unflatten_dict
+ from cellvit.models.classifier.linear_classifier import LinearClassifier
+@@ -289,7 +290,7 @@ class CellViTInference:
+             self.classifier = model
+ 
+     def _get_model(
+-        self, model_type: Literal["CellViT", "CellViT256", "CellViTSAM", "CellViTUNI"]
++        self, model_type: Literal["CellViT", "CellViT256", "CellViTSAM", "CellViTUNI", "CellViTVirchow"]
+     ) -> Union[CellViT, CellViT256, CellViTSAM, CellViTUNI]:
+         """Return the trained model for inference
+ 
+@@ -300,7 +301,7 @@ class CellViTInference:
+         Returns:
+             Union[CellViT, CellViT256, CellViTSAM, CellViTUNI]: Model
+         """
+-        implemented_models = ["CellViT", "CellViT256", "CellViTSAM", "CellViTUNI"]
++        implemented_models = ["CellViT", "CellViT256", "CellViTSAM", "CellViTUNI", "CellViTVirchow"]
+         if model_type not in implemented_models:
+             raise NotImplementedError(
+                 f"Unknown model type. Please select one of {implemented_models}"
+@@ -338,6 +339,14 @@ class CellViTInference:
+                 num_nuclei_classes=self.run_conf["data"]["num_nuclei_classes"],
+                 num_tissue_classes=self.run_conf["data"]["num_tissue_classes"],
+             )
++        elif model_type in ["CellViTVirchow"]:
++            model = CellViTVirchow(
++                model_virchow_path=None,
++                num_nuclei_classes=self.run_conf["data"]
++                ["num_nuclei_classes"],
++                num_tissue_classes=self.run_conf["data"]
++                ["num_tissue_classes"]
++            )
+         return model
+ 
+     def _load_inference_transforms(self):
+diff --git a/cellvit/models/base/vision_transformer.py b/cellvit/models/base/vision_transformer.py
+index a4399b3..3a85962 100644
+--- a/cellvit/models/base/vision_transformer.py
++++ b/cellvit/models/base/vision_transformer.py
+@@ -370,7 +370,7 @@ class VisionTransformer(nn.Module):
+             patch_pos_embed.reshape(
+                 1, int(math.sqrt(N)), int(math.sqrt(N)), dim
+             ).permute(0, 3, 1, 2),
+-            scale_factor=(w0 / math.sqrt(N), h0 / math.sqrt(N)),
++            scale_factor=(float(w0) / math.sqrt(N), float(h0) / math.sqrt(N)),
+             mode="bicubic",
+         )
+         assert (
+diff --git a/cellvit/models/cell_segmentation/cellvit_virchow.py b/cellvit/models/cell_segmentation/cellvit_virchow.py
+index 54fbebc..12783bc 100644
+--- a/cellvit/models/cell_segmentation/cellvit_virchow.py
++++ b/cellvit/models/cell_segmentation/cellvit_virchow.py
+@@ -197,7 +197,7 @@ class CellViTVirchow(CellViT):
+         out_dict = {}
+         bs = x.shape[0]
+         input_shape = x.shape[2]
+-        rescale_value = self.input_rescale_dict[input_shape]
++        rescale_value = self.input_rescale_dict[int(input_shape)]
+ 
+         x = F.interpolate(x, size=(rescale_value, rescale_value), mode="area")
+         classifier_logits, _, z = self.encoder(x)
+diff --git a/cellvit/training/experiments/experiment_cell_classifier.py b/cellvit/training/experiments/experiment_cell_classifier.py
+index a1f6cfc..70a56b0 100644
+--- a/cellvit/training/experiments/experiment_cell_classifier.py
++++ b/cellvit/training/experiments/experiment_cell_classifier.py
+@@ -375,11 +375,7 @@ class ExperimentCellVitClassifier(BaseExperiment):
+             Callable: CrossEntropyLoss
+         """
+         if weighted_sampling:
+-            if self.run_conf["data"]["dataset"].lower() in [
+-                "lizard_preextracted",
+-                "lizard",
+-                "panoptils",
+-            ]:
++            if weight_list is not None:
+                 loss_fn = retrieve_loss_fn(
+                     "CrossEntropyLoss", weight=torch.Tensor(weight_list)
+                 )

@@ -112,8 +112,9 @@ to TorchScript at 1024×1024.
 
 ## Tissue roadmap
 
-The eventual target is the following 15 tissues. **breast** and
-**colorectal** are currently set up; the rest are planned:
+The eventual target is the following 15 tissues. **breast**, **colorectal**,
+and **pantissue** (a 12-class cross-tissue head trained on all currently
+available samples) are currently set up; the rest are planned:
 
 | Folder | Disease | Abbrev | Source |
 |--------|---------|--------|--------|

@@ -49,11 +49,14 @@ data/qprj/
 cellvit-training/_logs/
 
 # ── Quarantined / archived (machine-local, never committed) ────────────────
-cellvit-training/_to_be_deleted/
+# Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).
+_to_be_deleted/
+**/_to_be_deleted/
 cellvit-training/_archive_hne/
 
 # ── Staging area (review-and-delete) ────────────────────────────────────────
 to-be-deleted/
+**/to-be-deleted/
 
 # ── KurtoRank: separate project, excluded from this repo ────────────────────
 kurtorank/

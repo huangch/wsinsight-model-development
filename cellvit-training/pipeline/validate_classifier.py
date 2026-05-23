@@ -369,7 +369,7 @@ def plot_confusion_matrix(cm, class_names, outdir: Path, normalize: bool = True)
     suffix = "norm" if normalize else "counts"
     png_path = outdir / f"confusion_matrix_{suffix}.png"
     svg_path = outdir / f"confusion_matrix_{suffix}.svg"
-    fig.savefig(png_path, dpi=600, bbox_inches="tight")
+    fig.savefig(png_path, dpi=300, bbox_inches="tight")
     fig.savefig(svg_path, format="svg", bbox_inches="tight")
     plt.close(fig)
     print(f"  Saved: {png_path}")
@@ -410,7 +410,7 @@ def main():
                              "Defaults to <checkpoint_dir>/validation/.")
     parser.add_argument("--device", default=None,
                         help="Torch device, e.g. 'cuda' or 'cpu'. Defaults to auto.")
-    parser.add_argument("--batch-size", type=int, default=4,
+    parser.add_argument("--batch-size", type=int, default=64,
                         help="DataLoader batch size.")
     parser.add_argument("--num-workers", type=int, default=4,
                         help="DataLoader workers.")

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kurtorank"
+version = "3.0.0"
+description = "KurtoRank v3 — unsupervised ensemble subtype annotation for gene-limited spatial transcriptomics"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+  { name = "Chao Hui Huang, Ph.D." },
+]
+keywords = ["spatial-transcriptomics", "xenium", "cell-annotation", "kurtorank"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+  "anndata",
+  "scanpy",
+  "squidpy",
+  "spatialdata",
+  "spatialdata-io",
+  "torch",
+  "numpy",
+  "pandas",
+  "scipy",
+  "statsmodels",
+  "matplotlib",
+  "seaborn",
+  "click",
+  "tqdm",
+  "cellxgene-census",
+  "tiledbsoma",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+]
+
+[project.scripts]
+kurtorank = "kurtorank.cli:_main"
+
+[project.urls]
+Homepage = "https://github.com/pfizer/kurtorank"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+kurtorank = ["markers/data/*.csv"]

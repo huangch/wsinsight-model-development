@@ -28,7 +28,7 @@ import javax.imageio.ImageIO
 //   /workspace/wsinsight/model-development/cellvit-training/trainingset/breast
 //   /workspace/wsinsight/model-development/cellvit-training/trainingset/colorectal
 // Edit before each run, or set with the QuPath Script Editor "args" hook.
-def OUTPUT_ROOT  = "/workspace/wsinsight/model-development/cellvit-training/trainingset/colorectal"
+def OUTPUT_ROOT  = "/workspace/wsinsight/model-development/cellvit-training/trainingset/pantissue"
 def SPLIT        = "train"  // "train" or "test"
 
 // Overlap fraction: 0.0 = no overlap (stride = TILE_PX)

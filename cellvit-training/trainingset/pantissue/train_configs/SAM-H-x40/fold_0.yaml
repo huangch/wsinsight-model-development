@@ -1,7 +1,7 @@
 logging:
   mode: offline
   project: cellvit-pan-tissue
-  notes: pantissue-pantissue-label-10class-SAM-H-x40-40samples
+  notes: pantissue-pantissue-label-12class-SAM-H-x40-40samples
   log_comment: pantissue-pantissue-sam-h-x40
   wandb_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
   log_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
@@ -15,20 +15,22 @@ data:
   dataset_path: ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue
   normalize_stains_train: false
   normalize_stains_val: false
-  num_classes: 10
+  num_classes: 12
   train_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue/splits/fold_0/train.csv
   val_filelist: ${CELLVIT_TRAINING_ROOT}/trainingset/pantissue/splits/fold_0/val.csv
   label_map:
     0: lymphoid
-    1: stromal
+    1: other_stromal_mesenchymal
     2: epithelial
     3: tumor
     4: myeloid
     5: endothelial
     6: neural
     7: plasma
-    8: granulocyte
-    9: blast
+    8: other_granulocyte
+    9: fibroblast
+    10: neutrophil
+    11: mast
 
 cellvit_path: ${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth
 
@@ -51,20 +53,23 @@ training:
   mixed_precision: true
   eval_every: 1
   weighted_sampling: true
-  # Inverse-frequency weights (weight ≈ 10 / class_percent, capped at 10.0).
-  # Percentages are pooled cell counts across all 40 H&E samples
-  # (total 14,841,455 cells), computed by build_cell_labels.py.
-  # class 0  lymphoid    23.67%  -> weight ~0.42
-  # class 1  stromal     20.99%  -> weight ~0.48
-  # class 2  epithelial  17.40%  -> weight ~0.57
-  # class 3  tumor       15.79%  -> weight ~0.63
-  # class 4  myeloid      9.33%  -> weight ~1.07
-  # class 5  endothelial  4.70%  -> weight ~2.13
-  # class 6  neural       4.32%  -> weight ~2.31
-  # class 7  plasma       1.99%  -> weight ~5.03
-  # class 8  granulocyte  1.19%  -> weight ~8.40
-  # class 9  blast        0.63%  -> weight ~10.00  (capped)
-  weight_list: [0.42, 0.48, 0.57, 0.63, 1.07, 2.13, 2.31, 5.03, 8.40, 10.00]
+  # Inverse-frequency weights (weight = min(10 / class_percent, 10.0)).
+  # 12-class taxonomy after Path 3 (blast → lymphoid/myeloid/plasma split via
+  # kurtorank subtype re-mapping). Pooled across 40 H&E samples, total
+  # 8,302,437 detections from load_mapping pass 3.
+  # class  0  lymphoid                   31.60%  -> weight  0.32
+  # class  1  other_stromal_mesenchymal   5.13%  -> weight  1.95
+  # class  2  epithelial                 12.93%  -> weight  0.77
+  # class  3  tumor                      15.64%  -> weight  0.64
+  # class  4  myeloid                     9.08%  -> weight  1.10
+  # class  5  endothelial                 5.06%  -> weight  1.98
+  # class  6  neural                      5.33%  -> weight  1.88
+  # class  7  plasma                      2.59%  -> weight  3.86
+  # class  8  other_granulocyte           0.18%  -> weight 10.00  (capped)
+  # class  9  fibroblast                 11.52%  -> weight  0.87
+  # class 10  neutrophil                  0.15%  -> weight 10.00  (capped)
+  # class 11  mast                        0.72%  -> weight 10.00  (capped)
+  weight_list: [0.32, 1.95, 0.77, 0.64, 1.10, 1.98, 1.88, 3.86, 10.00, 0.87, 10.00, 10.00]
   scheduler:
     scheduler_type: exponential
     gamma: 0.95

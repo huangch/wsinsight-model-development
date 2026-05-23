@@ -6,29 +6,65 @@
  * cluster id as written by QuST's XeniumAnnotation), second col = new
  * PathClass name (a pantissue / hne label string).
  *
+ * CSV resolution order (first match wins):
+ *   1. args[0]               -- explicit path (single-image use)
+ *   2. <image-parent>/outs/celltype_assignment_pantissue_label.csv
+ *      (CLI batch mode: one Xenium outs/ per H&E image)
+ *   3. GUI file picker       -- fallback when running interactively
+ *
  * Usage:
- *   CLI batch (headless, every image in the project):
+ *   CLI batch (headless, every image in the project, auto-resolves CSV
+ *   from each image's outs/ dir):
  *     QuPath script -s -p data/qprj/project.qpproj \
+ *         cellvit-training/qupath/load_mapping.groovy
+ *
+ *   CLI single image with explicit CSV:
+ *     QuPath script -s -p data/qprj/project.qpproj \
+ *         -i <image-name> \
  *         -a /path/to/celltype_assignment_pantissue_label.csv \
  *         cellvit-training/qupath/load_mapping.groovy
- *     # -s persists the new PathClasses into each image's .qpdata
  *
- *   GUI: just run the script and pick the CSV when prompted.
+ *   GUI: run the script and pick the CSV when prompted.
+ *
+ * `-s` persists the new PathClasses into each image's .qpdata.
  */
 import java.io.File
 import java.io.BufferedReader
 import java.io.FileReader
+import java.nio.file.Paths
 
-// CSV path: prefer args[0] (CLI), fall back to file picker (GUI)
+// CSV path: prefer args[0], else derive from image outs/, else GUI prompt
 def csvFile = null
 if (binding.hasVariable('args') && args != null && args.length > 0) {
     csvFile = new File((String) args[0])
     println "Using CSV from args[0]: ${csvFile.getAbsolutePath()}"
 } else {
-    csvFile = qupath.lib.gui.dialogs.Dialogs.promptForFile("Select CSV file", null, "CSV files", ".csv")
-    if (csvFile == null) {
-        println "No file selected, exiting..."
-        return
+    // Try to auto-resolve from current image's outs/ dir
+    def imageData = getCurrentImageData()
+    if (imageData != null) {
+        def server = imageData.getServer()
+        def imgName = server.getMetadata().getName()
+        def uri = server.getURIs().iterator().next()
+        def imgPath = Paths.get(uri)
+        def candidate = imgPath.getParent()
+                              .resolve("outs")
+                              .resolve("celltype_assignment_pantissue_label.csv")
+                              .toFile()
+        if (candidate.exists()) {
+            csvFile = candidate
+            println "==== ${imgName} ===="
+            println "  Using CSV from image outs/: ${csvFile.getAbsolutePath()}"
+        } else {
+            println "==== ${imgName} ===="
+            println "  [skip] no CSV at: ${candidate.getAbsolutePath()}"
+            return
+        }
+    } else {
+        csvFile = qupath.lib.gui.dialogs.Dialogs.promptForFile("Select CSV file", null, "CSV files", ".csv")
+        if (csvFile == null) {
+            println "No file selected, exiting..."
+            return
+        }
     }
 }
 
@@ -94,6 +130,23 @@ try {
     println "CSV processing completed:"
     println "  Total lines: ${lineCount}"
     println "  Processed rows: ${processedCount}"
+
+    // Per-slide tally so batch logs are greppable
+    def tally = [:].withDefault { 0 }
+    def unlabeled = 0
+    getDetectionObjects().each {
+        def pc = it.getPathClass()
+        if (pc == null) {
+            unlabeled += 1
+        } else {
+            tally[pc.getName()] += 1
+        }
+    }
+    println "  detections labeled: ${getDetectionObjects().size() - unlabeled} / ${getDetectionObjects().size()}"
+    println "  class tally:"
+    tally.sort { -it.value }.each { k, v -> println "    ${k}: ${v}" }
+    if (unlabeled > 0) println "    (unlabeled): ${unlabeled}"
+    println "done."
 } catch (Exception e) {
     println "Error processing CSV file: ${e.getMessage()}"
     e.printStackTrace()

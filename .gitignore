@@ -58,9 +58,6 @@ cellvit-training/_archive_hne/
 to-be-deleted/
 **/to-be-deleted/
 
-# ── KurtoRank: separate project, excluded from this repo ────────────────────
-kurtorank/
-
 # ── Python build / cache artifacts ──────────────────────────────────────────
 __pycache__/
 *.py[cod]

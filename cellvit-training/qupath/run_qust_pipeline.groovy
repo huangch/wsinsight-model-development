@@ -3,8 +3,15 @@
  * ------------------------
  * Per-image QuST ritual for the pantissue CellViT training set:
  *
- *   1. PetesSimpleTissueDetection  -- foreground (tissue) annotation
- *   2. StarDistCellNucleusDetection -- detect H&E nuclei inside tissue
+ *   1. Whole-slide rectangle annotation -- universal root parent that
+ *                                     does NOT depend on stain intensity
+ *                                     or scanner. False-positive nuclei in
+ *                                     background are filtered downstream
+ *                                     by XeniumAnnotation (drops detections
+ *                                     with no matching Xenium cell) and by
+ *                                     export_tiles.groovy (MIN_CELLS + BG
+ *                                     mean-RGB threshold per tile).
+ *   2. StarDistCellNucleusDetection -- detect H&E nuclei inside the rect
  *   3. XeniumAnnotation            -- transfer Xenium cluster_id onto each
  *                                     H&E detection (PathClass.name = cluster_id)
  *
@@ -28,7 +35,13 @@
  */
 import qupath.lib.scripting.QP
 import qupath.lib.objects.PathAnnotationObject
+import qupath.lib.objects.PathObjects
 import qupath.lib.objects.classes.PathClass
+import qupath.lib.regions.ImagePlane
+import qupath.lib.roi.ROIs
+import qupath.lib.gui.QuPathGUI
+import qupath.fx.dialogs.Dialogs
+import qupath.fx.dialogs.FileChoosers
 import java.nio.file.Paths
 
 //------------------------------------------------------------------------------
@@ -38,8 +51,6 @@ def STARDIST_MODEL = "he_heavy_augment.pb"   // file name inside QuST's
                                              // configured stardist model dir
 def CELL_EXPANSION_UM = 5.0                  // nucleus -> cell expansion (um);
                                              //   set to -1 for nuclei only
-def TISSUE_THRESHOLD = 210                   // global threshold (0-255);
-                                             //   for H&E, lower = more tissue
 def PROB_THRESHOLD   = 0.5                   // StarDist detection probability
 
 // Xenium loader behaviour (matches QuST defaults except removeUnlabeledCells)
@@ -67,8 +78,27 @@ def imgPath = Paths.get(uri)
 def xeniumDir = imgPath.getParent().resolve("outs").toString()
 def outsFile = new File(xeniumDir)
 if (!outsFile.isDirectory()) {
-    println "  [skip] Xenium outs/ not found at: ${xeniumDir}"
-    return
+    // Auto-detected location missing. If a GUI is available (interactive
+    // QuPath session), prompt the user to pick the outs/ folder manually;
+    // if running headless (CLI batch), fall back to printing [skip].
+    def gui = QuPathGUI.getInstance()
+    if (gui != null) {
+        Dialogs.showWarningNotification(
+                "Xenium outs/ not found",
+                "Auto-detected path does not exist:\n${xeniumDir}\nPlease select the Xenium outs/ folder for ${imgName}.")
+        def picked = FileChoosers.promptForDirectory(
+                "Select Xenium outs/ folder for ${imgName}",
+                outsFile.getParentFile())
+        if (picked == null) {
+            println "  [skip] user cancelled outs/ folder selection"
+            return
+        }
+        outsFile = picked
+        xeniumDir = picked.getAbsolutePath()
+    } else {
+        println "  [skip] Xenium outs/ not found at: ${xeniumDir}"
+        return
+    }
 }
 println "  xeniumDir = ${xeniumDir}"
 
@@ -78,30 +108,29 @@ println "  xeniumDir = ${xeniumDir}"
 clearAllObjects()
 
 //------------------------------------------------------------------------------
-// 1) Tissue detection (root parent)
+// 1) Whole-slide rectangle annotation (root parent)
+//
+// Rationale: a stain/scanner-dependent tissue-detection threshold is fragile
+// across cohorts. Instead we annotate the entire slide as one rectangle and
+// let StarDist run everywhere. False-positive nuclei in background will be
+// removed by XeniumAnnotation (removeUnlabeledCells=true keeps only
+// detections that match a real Xenium cell), and empty/background tiles will
+// be dropped by export_tiles.groovy (MIN_CELLS + BG_THRESH filters).
 //------------------------------------------------------------------------------
-println "  [1/3] PetesSimpleTissueDetection ..."
-def tissueParams = String.format(
-        '{"threshold":%d,' +
-        '"requestedPixelSizeMicrons":20.0,' +
-        '"minAreaMicrons":10000.0,' +
-        '"maxHoleAreaMicrons":1000000.0,' +
-        '"darkBackground":false,' +
-        '"smoothImage":true,' +
-        '"medianCleanup":true,' +
-        '"dilateBoundaries":false,' +
-        '"smoothCoordinates":true,' +
-        '"excludeOnBoundary":false,' +
-        '"singleAnnotation":true}',
-        TISSUE_THRESHOLD)
-runPlugin("qupath.ext.qust.PetesSimpleTissueDetection", tissueParams)
+println "  [1/3] Whole-slide rectangle annotation ..."
+def wsRoi = ROIs.createRectangleROI(
+        0.0, 0.0,
+        (double) server.getWidth(), (double) server.getHeight(),
+        ImagePlane.getDefaultPlane())
+def wsAnnotation = PathObjects.createAnnotationObject(wsRoi)
+addObject(wsAnnotation)
+println "  whole-slide annotation: ${server.getWidth()} x ${server.getHeight()} px"
 
 def annotations = getAnnotationObjects()
 if (annotations.isEmpty()) {
-    println "  [skip] no tissue annotation produced"
+    println "  [skip] failed to create whole-slide annotation"
     return
 }
-println "  tissue annotations: ${annotations.size()}"
 
 //------------------------------------------------------------------------------
 // 2) StarDist H&E nucleus detection inside the tissue annotation(s)

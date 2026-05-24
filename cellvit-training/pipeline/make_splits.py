@@ -1,10 +1,21 @@
 """
 make_splits.py
 --------------
-Build train/val splits from exported tiles.
+Build train/val splits from exported tiles, grouped by slide (SAMPLE_TAG).
 
-Run AFTER export_tiles.groovy has finished for all
-samples of the target tissue.
+Tiles produced by qupath/export_tiles.groovy are named
+    <SAMPLE_TAG>_tile_<NNNNN>[ _<aug>].png/.csv
+where SAMPLE_TAG identifies the source slide. We split at the SAMPLE_TAG
+level (slide-level holdout), not the tile level, so tiles from one slide
+never appear in both train and val. This matters especially when overlap
+is enabled at export time.
+
+Single-slide tissues (heart, brain, cervix, prostate, lymph_node) fall back
+to per-tile shuffle with a WARN: there is no true slide-level holdout when
+only one slide exists.
+
+Run AFTER export_tiles.groovy has finished for all samples of the target
+tissue.
 
 Usage:
     python make_splits.py --tissue breast
@@ -14,10 +25,21 @@ Usage:
 import argparse
 import os
 import random
+import re
+from collections import defaultdict
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent
+
+# Tile-suffix pattern: matches "_tile_00042" optionally followed by an
+# augmentation tag like "_hflip", "_rot90". Everything before this suffix is
+# the SAMPLE_TAG.
+_TILE_SUFFIX_RE = re.compile(r"_tile_\d+(?:_[a-z0-9]+)?$")
+
+
+def _sample_tag(stem: str) -> str:
+    return _TILE_SUFFIX_RE.sub("", stem)
 
 
 def main() -> None:
@@ -36,15 +58,51 @@ def main() -> None:
         raise SystemExit(f"ERROR: label dir not found: {label_dir}")
 
     tiles = sorted(
-        f.replace(".csv", "") for f in os.listdir(label_dir) if f.endswith(".csv")
+        f[:-4] for f in os.listdir(label_dir) if f.endswith(".csv")
     )
+    if not tiles:
+        raise SystemExit(f"ERROR: no .csv files under {label_dir}")
     print(f"Total tiles: {len(tiles)}")
 
-    random.seed(args.seed)
-    random.shuffle(tiles)
-    n_val = int(len(tiles) * args.val_frac)
-    val_tiles = tiles[:n_val]
-    train_tiles = tiles[n_val:]
+    # Group tiles by SAMPLE_TAG (slide stem).
+    groups: dict[str, list[str]] = defaultdict(list)
+    for stem in tiles:
+        groups[_sample_tag(stem)].append(stem)
+    group_names = sorted(groups)
+    print(f"Slides (SAMPLE_TAGs): {len(group_names)}")
+
+    rng = random.Random(args.seed)
+
+    if len(group_names) <= 1:
+        # Single-slide tissue → no true slide-level holdout possible.
+        # Fall back to per-tile shuffle so val gets non-empty spatial holdout.
+        print(
+            f"WARN: only {len(group_names)} slide for tissue '{args.tissue}'. "
+            f"Falling back to per-tile shuffle — val is same-slide spatial "
+            f"holdout, NOT a true slide-level holdout."
+        )
+        shuffled = list(tiles)
+        rng.shuffle(shuffled)
+        n_val = max(1, int(len(shuffled) * args.val_frac))
+        val_tiles = shuffled[:n_val]
+        train_tiles = shuffled[n_val:]
+    else:
+        shuffled_groups = list(group_names)
+        rng.shuffle(shuffled_groups)
+        n_val_groups = max(1, int(round(len(shuffled_groups) * args.val_frac)))
+        # Guarantee at least one train group remains.
+        n_val_groups = min(n_val_groups, len(shuffled_groups) - 1)
+        val_groups = set(shuffled_groups[:n_val_groups])
+        train_groups = set(shuffled_groups[n_val_groups:])
+
+        val_tiles = sorted(t for g in val_groups for t in groups[g])
+        train_tiles = sorted(t for g in train_groups for t in groups[g])
+        print(
+            f"Group split: train_groups={len(train_groups)} "
+            f"val_groups={len(val_groups)}"
+        )
+        print(f"  train slides: {sorted(train_groups)}")
+        print(f"  val slides  : {sorted(val_groups)}")
 
     splits_dir.mkdir(parents=True, exist_ok=True)
     (splits_dir / "train.csv").write_text("\n".join(train_tiles) + "\n")

@@ -9,34 +9,69 @@
  * The class-name string on each detection's PathClass is mapped to a class_int
  * via label_map.yaml (hand-authored canonical int ↔ label-name table).
  *
+ * Auto-routing (default): the tissue is derived from the image URI's
+ * `data/xenium/<tissue>/...` segment, and OUTPUT_ROOT is set to
+ *     <repo>/cellvit-training/trainingset/<tissue>
+ * so a single QuPath CLI batch over the global project exports all tissues
+ * in one pass (resumable per PNG).
+ *
+ * Override (optional): set FORCE_TISSUE below (or pass via QuPath
+ * `script -a <tissue>`) to (i) force OUTPUT_ROOT for the active image and
+ * (ii) skip images whose URI does not match `data/xenium/<FORCE_TISSUE>/`.
+ *
+ * Overlap (optional): pass a second `-a <overlap>` (float in [0.0, 1.0))
+ * to set OVERLAP_RATIO at the CLI, e.g.
+ *     QuPath script -p ... -a heart -a 0.5 export_tiles.groovy
+ * Use 0.5 for single-slide tissues (heart, brain, cervix, prostate,
+ * lymph_node) to densify the training set; keep 0.0 for multi-slide tissues.
+ *
  * Requirements:
  *   - Open the image in QuPath; its .qpdata must already contain detections
  *     whose PathClass names match keys in label_map.yaml (e.g. "tumor",
  *     "lymphoid", …).
  *   - label_map.yaml lives at ${OUTPUT_ROOT}/label_map.yaml.
  *   - SAMPLE_TAG is derived automatically from the image filename.
- *   - Only set OUTPUT_ROOT and SPLIT below.
  *
  * The script is resumable: tiles whose PNG already exists are skipped.
  */
 
 import java.awt.Color
+import java.awt.image.BufferedImage
+import java.nio.file.Paths
 import javax.imageio.ImageIO
 
 // ======================== USER CONFIGURATION ========================
-// Output trainingset for the tissue currently being exported, e.g.:
-//   /workspace/wsinsight/model-development/cellvit-training/trainingset/breast
-//   /workspace/wsinsight/model-development/cellvit-training/trainingset/colorectal
-// Edit before each run, or set with the QuPath Script Editor "args" hook.
-def OUTPUT_ROOT  = "/workspace/wsinsight/model-development/cellvit-training/trainingset/pantissue"
+// Leave FORCE_TISSUE = null to auto-route per image (recommended for a
+// single CLI batch over the global project). Set to e.g. "breast" to
+// restrict export to one tissue. Also picked up from `args` if provided.
+def FORCE_TISSUE = null
 def SPLIT        = "train"  // "train" or "test"
+if (args != null && args.size() > 0 && args[0]) FORCE_TISSUE = args[0].toString()
 
 // Overlap fraction: 0.0 = no overlap (stride = TILE_PX)
 //                   0.5 = 50% overlap (stride = 512 px for 1024 tile)
+// Also picked up from `args[1]` if provided, e.g.
+//     QuPath script -p ... -a heart -a 0.5 export_tiles.groovy
+// Recommended for single-slide tissues (heart, brain, cervix, prostate,
+// lymph_node) to expand the training set; multi-slide tissues should keep 0.0.
 double OVERLAP_RATIO = 0.0
+if (args != null && args.size() > 1 && args[1]) {
+    try { OVERLAP_RATIO = args[1].toString().toDouble() }
+    catch (NumberFormatException e) {
+        println "ERROR: args[1]='${args[1]}' is not a valid overlap ratio float."
+        return
+    }
+    if (OVERLAP_RATIO < 0.0 || OVERLAP_RATIO >= 1.0) {
+        println "ERROR: OVERLAP_RATIO must be in [0.0, 1.0); got ${OVERLAP_RATIO}."
+        return
+    }
+}
 
 // Augmentations applied to each base tile (coordinate-aware)
 // Each enabled augmentation writes an additional PNG+CSV pair.
+// NOTE: prefer leaving these off and using CellViT++'s YAML
+// `transformations:` block (RandomRotate90 + HFlip + VFlip), which applies
+// random augs at every epoch without disk overhead.
 boolean AUG_HFLIP  = false   // horizontal flip
 boolean AUG_VFLIP  = false   // vertical flip
 boolean AUG_ROT90  = false   // rotate 90° CCW
@@ -74,6 +109,28 @@ def SAMPLE_TAG = imageName
     .replaceAll(/(?i)\.ome\.tif$/, "")
     .replaceAll(/(?i)\.tif$/, "")
 
+// ── Derive tissue + OUTPUT_ROOT from image URI segment "data/xenium/<tissue>/..."
+//    Then OUTPUT_ROOT = <repo>/cellvit-training/trainingset/<tissue>.
+def serverPath = server.getPath() ?: server.getURIs().collect{it.toString()}.join(" ")
+def tissueMatch = (serverPath =~ /data\/xenium\/([^\/]+)\//)
+if (!tissueMatch.find()) {
+    println "WARN: image URI does not contain 'data/xenium/<tissue>/' segment; skipping."
+    println "      URI = ${serverPath}"
+    return
+}
+def TISSUE = tissueMatch.group(1)
+if (FORCE_TISSUE != null && TISSUE != FORCE_TISSUE) {
+    println "Skip: image tissue '${TISSUE}' != FORCE_TISSUE '${FORCE_TISSUE}'"
+    return
+}
+
+// Resolve repo root from the same URI: keep everything before "data/xenium/".
+def repoRootStr = serverPath.substring(0, tissueMatch.start()).replaceFirst(/^file:\/+/, "/")
+// Strip URL artefacts the JVM may leave on Windows ("file:/C:/...").
+if (repoRootStr.matches(/^\/[A-Za-z]:.*/)) repoRootStr = repoRootStr.substring(1)
+def repoRoot = new File(repoRootStr).getCanonicalFile()
+def OUTPUT_ROOT = new File(repoRoot, "cellvit-training/trainingset/${TISSUE}").getAbsolutePath()
+
 // ── Load label_map.yaml  (int -> label-name)  →  invert to (label-name -> int)
 def LABEL_MAP_YAML = "${OUTPUT_ROOT}/label_map.yaml"
 def labelMapFile = new File(LABEL_MAP_YAML)
@@ -110,6 +167,8 @@ if (AUG_ROT270) augmentations << ["_rot270", { img, cs, sz -> rot270(img, cs, sz
 
 println "=== export_tiles.groovy ==="
 println "Image      : ${imageName}"
+println "Tissue     : ${TISSUE}${FORCE_TISSUE ? '  (forced)' : '  (auto-routed)'}"
+println "Output root: ${OUTPUT_ROOT}"
 println "Sample tag : ${SAMPLE_TAG}"
 println "Label map  : ${LABEL_MAP_YAML}"
 println "Slide size : ${server.getWidth()} × ${server.getHeight()} px"

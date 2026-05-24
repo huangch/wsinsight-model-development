@@ -1,7 +1,7 @@
 logging:
   mode: offline
-  project: cellvit-pan-tissue
-  notes: pantissue-pantissue-label-12class-SAM-H-x40-40samples
+  project: cellvit-pantissue
+  notes: pantissue-pantissue-12class-SAM-H-x40
   log_comment: pantissue-pantissue-sam-h-x40
   wandb_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
   log_dir: ${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local
@@ -71,22 +71,19 @@ training:
   eval_every: 1
   weighted_sampling: true
   # Inverse-frequency weights (weight = min(10 / class_percent, 10.0)).
-  # 12-class taxonomy after Path 3 (blast → lymphoid/myeloid/plasma split via
-  # kurtorank subtype re-mapping). Pooled across 40 H&E samples, total
-  # 8,302,437 detections from load_mapping pass 3.
-  # class  0  lymphoid                   31.60%  -> weight  0.32
-  # class  1  other_stromal_mesenchymal   5.13%  -> weight  1.95
-  # class  2  epithelial                 12.93%  -> weight  0.77
-  # class  3  tumor                      15.64%  -> weight  0.64
-  # class  4  myeloid                     9.08%  -> weight  1.10
-  # class  5  endothelial                 5.06%  -> weight  1.98
-  # class  6  neural                      5.33%  -> weight  1.88
-  # class  7  plasma                      2.59%  -> weight  3.86
-  # class  8  other_granulocyte           0.18%  -> weight 10.00  (capped)
-  # class  9  fibroblast                 11.52%  -> weight  0.87
-  # class 10  neutrophil                  0.15%  -> weight 10.00  (capped)
-  # class 11  mast                        0.72%  -> weight 10.00  (capped)
-  weight_list: [0.32, 1.95, 0.77, 0.64, 1.10, 1.98, 1.88, 3.86, 10.00, 0.87, 10.00, 10.00]
+  # class  0  lymphoid                    28.87%  ->  weight  0.35
+  # class  1  other_stromal_mesenchymal    6.08%  ->  weight  1.65
+  # class  2  epithelial                  13.31%  ->  weight  0.75
+  # class  3  tumor                       12.73%  ->  weight  0.79
+  # class  4  myeloid                      8.04%  ->  weight  1.24
+  # class  5  endothelial                  4.29%  ->  weight  2.33
+  # class  6  neural                      11.59%  ->  weight  0.86
+  # class  7  plasma                       2.44%  ->  weight  4.10
+  # class  8  other_granulocyte            0.13%  ->  weight 10.00  (capped)
+  # class  9  fibroblast                  11.31%  ->  weight  0.88
+  # class 10  neutrophil                   0.11%  ->  weight 10.00  (capped)
+  # class 11  mast                         1.11%  ->  weight  9.02
+  weight_list: [0.35, 1.65, 0.75, 0.79, 1.24, 2.33, 0.86, 4.1, 10, 0.88, 10, 9.02]
   scheduler:
     scheduler_type: exponential
     gamma: 0.95

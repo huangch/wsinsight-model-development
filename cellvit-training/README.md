@@ -14,9 +14,12 @@ tissue.
 ```
 cellvit-training/
 ├── pipeline/                # tissue-agnostic Python + bash drivers
-│   ├── make_splits.py       # exported tiles → train/val splits
-│   ├── train.sh             # 4-step training wrapper
-│   ├── validate.sh          # re-run validation against a finished run
+│   ├── make_splits.py            # exported tiles → train/val splits
+│   ├── compute_class_weights.py  # tally labels → inverse-frequency weights
+│   ├── make_train_config.py      # render fold_*.yaml from the pantissue template
+│   ├── train.sh                  # 4-step training wrapper (one tissue)
+│   ├── train_all_tissues.sh      # loop the per-tissue pipeline across every tissue
+│   ├── validate.sh               # re-run validation against a finished run
 │   └── validate_classifier.py
 ├── qupath/                  # QuPath Groovy helpers (CLI-batch capable)
 │   ├── run_qust_pipeline.groovy  # tissue detection + StarDist + Xenium cluster transfer
@@ -83,12 +86,15 @@ edits — set `PYTHON=<...>` to override the interpreter if needed.
 
 ## End-to-end pipeline (per tissue)
 
-For a tissue named `<tissue>` (e.g. `pantissue`):
+For a tissue named `<tissue>` (e.g. `pantissue`, `breast`, `heart`):
 
 ```bash
 # 0. (one-time) curate cell-type labels with kurtorank to produce
 #    celltype_assignment_pantissue_label.csv in each sample's outs/.
-#    Hand-author trainingset/<tissue>/label_map.yaml (int ↔ label-name).
+#    Per-tissue heads currently share the canonical 12-class pantissue
+#    vocabulary at trainingset/<tissue>/label_map.yaml (one identical copy
+#    per tissue), so no per-tissue authoring is required for the label map
+#    itself.
 
 # 1. QuST detection + Xenium cluster transfer (headless CLI batch over every
 #    image in the QuPath project). Runs PetesSimpleTissueDetection +
@@ -106,16 +112,25 @@ QuPath script -s -p ../data/qprj/project.qpproj \
 #     revert PathClass back to the Xenium cluster_id, then re-run
 #     load_mapping.groovy with the new CSV.)
 
-# 3. Export tiles + per-tile cell CSVs (CLI batch):
-#    Edit OUTPUT_ROOT at top of export_tiles.groovy first.
+# 3. Export tiles + per-tile cell CSVs (CLI batch).
+#    Auto-routes each image to trainingset/<tissue>/ by matching
+#    `data/xenium/<tissue>/...` in the image URI; no per-tissue editing.
+#    To restrict export to one tissue: `QuPath script -a <tissue> ...`.
+#    For single-slide tissues (heart, brain, cervix, prostate, lymph_node),
+#    pass a second `-a <overlap>` to densify the training set, e.g.
+#    `QuPath script -a heart -a 0.5 ...` (50% overlap, stride 512 px).
 QuPath script -p ../data/qprj/project.qpproj qupath/export_tiles.groovy
 
-# 4. Build train/val splits from the exported tiles
-python pipeline/make_splits.py --tissue <tissue>
+# 4. Loop the rest of the pipeline (splits → config → train) across every
+#    tissue with exported tiles. One GPU at a time by default; pass
+#    --tissues "a b c" to subset.
+bash pipeline/train_all_tissues.sh
 
-# 5. Train head + auto-validate + export TorchScript (4 steps in one)
-bash pipeline/train.sh <tissue>                       # SAM-H-x40, fold_0
-bash pipeline/train.sh <tissue> SAM-H-x40 fold_0 <task>   # explicit form
+# 5. Or drive a single tissue manually (same effect):
+python pipeline/make_splits.py        --tissue <tissue>
+python pipeline/make_train_config.py  --tissue <tissue>
+bash   pipeline/train.sh              <tissue>                            # SAM-H-x40, fold_0, task=pantissue
+bash   pipeline/train.sh              <tissue> SAM-H-x40 fold_0 pantissue # explicit
 
 # 6. Re-run only validation against a finished training run
 bash pipeline/validate.sh <tissue>
@@ -129,25 +144,40 @@ to TorchScript at 1024×1024.
 
 ## Adding a new tissue
 
-1. Create `trainingset/<tissue>/label_map.yaml` (int ↔ label-name, 0..N-1
-   contiguous). This is the canonical mapping.
-2. Add the tissue's H&E images to `../data/qprj/project.qpproj`.
-3. Curate labels (headless): `qupath/run_qust_pipeline.groovy` →
+1. Add the tissue's H&E images to `../data/qprj/project.qpproj` under
+   `../data/xenium/<tissue>/<sample>/`. The `data/xenium/<tissue>/` segment
+   is what `export_tiles.groovy` keys on to auto-route output.
+2. Curate labels (headless): `qupath/run_qust_pipeline.groovy` →
    `qupath/load_mapping.groovy` with the sample's
-   `celltype_assignment_<tissue>_label.csv`.
-4. Set `OUTPUT_ROOT` at the top of `qupath/export_tiles.groovy` to
-   `trainingset/<tissue>/`, then run it via the QuPath CLI.
-5. Author `trainingset/<tissue>/train_configs/SAM-H-x40/fold_0.yaml`
-   (copy from an existing tissue; set `num_classes`, `label_map`, and
-   `weight_list` to match the tissue's class distribution).
-6. `pipeline/make_splits.py --tissue <tissue>` then
-   `pipeline/train.sh <tissue>`.
+   `celltype_assignment_pantissue_label.csv`.
+3. `cp trainingset/pantissue/label_map.yaml trainingset/<tissue>/label_map.yaml`
+   (every tissue currently uses the canonical 12-class pantissue vocabulary;
+   identical copy per tissue).
+4. `QuPath script -p ../data/qprj/project.qpproj qupath/export_tiles.groovy`
+   — exports every tissue, including the new one, in one resumable batch.
+   For single-slide tissues, add `-a <tissue> -a 0.5` to enable 50% tile
+   overlap (e.g. `-a heart -a 0.5`).
+5. `bash pipeline/train_all_tissues.sh --tissues <tissue>` — runs splits,
+   config, train, validate, TorchScript export.
+
+> **Augmentation defaults.** All per-tissue configs inherit the pantissue
+> template's `transformations:` block (`RandomRotate90`, `HorizontalFlip`,
+> `VerticalFlip`, each at `p=0.5`), so flip/rotate augs are applied
+> randomly at every epoch by CellViT-plus-plus's training loop. No
+> pre-baked augs (`AUG_HFLIP` etc. in `export_tiles.groovy`) are needed.
+>
+> **Slide-level splits.** `pipeline/make_splits.py` splits by `SAMPLE_TAG`
+> (the slide stem), so tiles from one slide never appear in both train and
+> val. Single-slide tissues fall back to per-tile shuffle with a `WARN:`
+> noting that val rigor reduces to same-slide spatial holdout.
 
 ## Tissue roadmap
 
-The eventual target is the following 15 tissues. **breast**, **colorectal**,
-and **pantissue** (a 12-class cross-tissue head trained on all currently
-available samples) are currently set up; the rest are planned:
+Fifteen heads are planned. **pantissue** (the 12-class cross-tissue head
+used as the canonical reference) is trained; per-tissue heads share the
+same 12-class vocabulary at `trainingset/<tissue>/label_map.yaml` and are
+produced by running `pipeline/train_all_tissues.sh` once tile export has
+completed across the global QuPath project.
 
 | Folder | Disease | Abbrev | Source |
 |--------|---------|--------|--------|

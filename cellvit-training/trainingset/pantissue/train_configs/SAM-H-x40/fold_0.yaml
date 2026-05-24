@@ -32,6 +32,23 @@ data:
     10: neutrophil
     11: mast
 
+# Albumentations transforms applied by cellvit/training/experiments/
+# experiment_cell_classifier.py::get_transforms(). Each entry has a single
+# `p` (probability of applying the op per sample, per epoch). Random
+# RandomRotate90 + flips are the standard pathology-safe augmentations for
+# H&E classification heads. `normalize` is mandatory once this block is
+# present (otherwise get_transforms() does NOT fall back to defaults).
+transformations:
+  randomrotate90:
+    p: 0.5
+  horizontalflip:
+    p: 0.5
+  verticalflip:
+    p: 0.5
+  normalize:
+    mean: [0.5, 0.5, 0.5]
+    std:  [0.5, 0.5, 0.5]
+
 cellvit_path: ${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth
 
 model:

@@ -119,7 +119,8 @@ QuPath script -s -p ../data/qprj/project.qpproj \
 #    For single-slide tissues (heart, brain, cervix, prostate, lymph_node),
 #    pass a second `-a <overlap>` to densify the training set, e.g.
 #    `QuPath script -a heart -a 0.5 ...` (50% overlap, stride 512 px).
-QuPath script -p ../data/qprj/project.qpproj qupath/export_tiles.groovy
+#    Or use the wrapper, which does both passes in one go:
+bash pipeline/export_all_tissues.sh
 
 # 4. Loop the rest of the pipeline (splits → config → train) across every
 #    tissue with exported tiles. One GPU at a time by default; pass

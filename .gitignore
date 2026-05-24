@@ -17,6 +17,7 @@ data/census/*/
 
 # ── Derived training artifacts (rebuilt by the pipeline) ────────────────────
 cellvit-training/trainingset/*/train/
+cellvit-training/trainingset/*/val/
 cellvit-training/trainingset/*/test/
 cellvit-training/trainingset/*/splits/
 cellvit-training/trainingset/*/labels/
@@ -24,7 +25,13 @@ cellvit-training/trainingset/*/cache/
 cellvit-training/trainingset/*/cell_labels_*.csv
 # NOTE: label_map.yaml is the canonical int<->name source (see export_tiles.groovy).
 # It MUST stay tracked; do not add it to .gitignore.
-# Resolved (envsubst'd) training configs:
+# Per-tissue train_configs are derived from the pantissue template by
+# make_train_config.py. Ignore them all, then re-include the pantissue
+# template (canonical source of truth for hyperparams and aug block).
+cellvit-training/trainingset/*/train_configs/
+!cellvit-training/trainingset/pantissue/train_configs/
+!cellvit-training/trainingset/pantissue/train_configs/**
+# Resolved (envsubst'd) training configs are always derived, even for pantissue:
 cellvit-training/trainingset/*/train_configs/*/.fold_*.resolved.yaml
 
 # ── Trained heads & training logs (not committed; published to HF Hub) ──────
@@ -45,6 +52,7 @@ data/qprj/
 
 # ── Pipeline logs (machine-local) ───────────────────────────────────────────
 cellvit-training/_logs/
+cellvit-training/logs/
 
 # ── Quarantined / archived (machine-local, never committed) ────────────────
 # Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).

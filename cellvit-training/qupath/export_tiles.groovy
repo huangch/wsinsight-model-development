@@ -111,11 +111,21 @@ def SAMPLE_TAG = imageName
 
 // ── Derive tissue + OUTPUT_ROOT from image URI segment "data/xenium/<tissue>/..."
 //    Then OUTPUT_ROOT = <repo>/cellvit-training/trainingset/<tissue>.
-def serverPath = server.getPath() ?: server.getURIs().collect{it.toString()}.join(" ")
+//    Use server.getURIs() (a clean Collection<URI>) instead of server.getPath()
+//    because the latter returns the QuPath canonical string
+//    "BioFormatsImageServer: file:/.../foo.ome.tif [--series, 0]" which the
+//    File constructor below misparses.
+def uriList = server.getURIs() as List
+if (uriList.isEmpty()) {
+    println "ERROR: server.getURIs() is empty; cannot derive tissue."
+    return
+}
+def serverURI = uriList[0]
+def serverPath = serverURI.getPath()  // "/workspace/.../data/xenium/<tissue>/..."
 def tissueMatch = (serverPath =~ /data\/xenium\/([^\/]+)\//)
 if (!tissueMatch.find()) {
     println "WARN: image URI does not contain 'data/xenium/<tissue>/' segment; skipping."
-    println "      URI = ${serverPath}"
+    println "      URI = ${serverURI}"
     return
 }
 def TISSUE = tissueMatch.group(1)

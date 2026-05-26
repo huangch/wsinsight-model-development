@@ -23,8 +23,8 @@ git clone https://github.com/TIO-IKIM/CellViT-plus-plus.git
 cd CellViT-plus-plus && git checkout <commit_or_tag> && cd ..
 ```
 
-The training wrappers (`cellvit-training/pipeline/train.sh`,
-`validate.sh`) point at `cellvit/CellViT-plus-plus/cellvit/...` for the
+The training wrappers (`cellvit-training/pipeline/train_tissue.sh`,
+`validate_tissue.sh`) point at `cellvit/CellViT-plus-plus/cellvit/...` for the
 training/conversion entry points; nothing else in this repo depends on
 upstream internals.
 

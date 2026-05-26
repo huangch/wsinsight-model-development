@@ -17,9 +17,10 @@ cellvit-training/
 │   ├── make_splits.py            # exported tiles → train/val splits
 │   ├── compute_class_weights.py  # tally labels → inverse-frequency weights
 │   ├── make_train_config.py      # render fold_*.yaml from the pantissue template
-│   ├── train.sh                  # 4-step training wrapper (one tissue)
+│   ├── _lib.sh                   # shared bash helpers sourced by every driver
+│   ├── train_tissue.sh           # 4-step training wrapper (one tissue)
 │   ├── train_all_tissues.sh      # loop the per-tissue pipeline across every tissue
-│   ├── validate.sh               # re-run validation against a finished run
+│   ├── validate_tissue.sh        # re-run validation against a finished run
 │   └── validate_classifier.py
 ├── qupath/                  # QuPath Groovy helpers (CLI-batch capable)
 │   ├── run_qust_pipeline.groovy  # tissue detection + StarDist + Xenium cluster transfer
@@ -130,14 +131,14 @@ bash pipeline/train_all_tissues.sh
 # 5. Or drive a single tissue manually (same effect):
 python pipeline/make_splits.py        --tissue <tissue>
 python pipeline/make_train_config.py  --tissue <tissue>
-bash   pipeline/train.sh              <tissue>                            # SAM-H-x40, fold_0, task=pantissue
-bash   pipeline/train.sh              <tissue> SAM-H-x40 fold_0 pantissue # explicit
+bash   pipeline/train_tissue.sh        <tissue>                            # SAM-H-x40, fold_0, task=pantissue
+bash   pipeline/train_tissue.sh        <tissue> SAM-H-x40 fold_0 pantissue # explicit
 
 # 6. Re-run only validation against a finished training run
-bash pipeline/validate.sh <tissue>
+bash pipeline/validate_tissue.sh <tissue>
 ```
 
-`train.sh` runs four steps in sequence: train the `LinearClassifier` head,
+`train_tissue.sh` runs four steps in sequence: train the `LinearClassifier` head,
 locate `model_best.pth` under
 `cellvit/CellViT-plus-plus/logs_local/<TIMESTAMP>_<tissue>-<task>-<backbone>/checkpoints/`,
 emit a confusion matrix + classification report, and convert the checkpoint
@@ -219,7 +220,7 @@ Currently trained heads:
 Training runs write checkpoints under
 `cellvit/CellViT-plus-plus/logs_local/<run_id>/checkpoints/` and W&B logs
 under `.../logs_local/wandb/`. Both paths are git-ignored. After
-`train.sh` finishes, the chosen head is promoted to
+`train_tissue.sh` finishes, the chosen head is promoted to
 `cellvit-training/models/<head-name>/`:
 
 - `model_best.pth` — checkpoint (git-ignored; publish to HF Hub separately)
@@ -483,7 +484,7 @@ training config below.
 
 ## 11. Training Config Template
 
-The training wrapper `pipeline/train.sh` exports `${PROJECT_ROOT}` and
+The training wrapper `pipeline/train_tissue.sh` exports `${PROJECT_ROOT}` and
 `${CELLVIT_TRAINING_ROOT}`, materializes the tokenized YAML at
 `trainingset/<tissue>/train_configs/<backbone>/.<fold>.resolved.yaml` via
 `envsubst`, then invokes

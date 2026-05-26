@@ -260,6 +260,32 @@ double slideHeightUM = (double) server.getHeight() * slideMPP
 int nCols = (int) Math.ceil(slideWidthUM  / STRIDE_UM)
 int nRows = (int) Math.ceil(slideHeightUM / STRIDE_UM)
 println "\nGrid: ${nCols} cols × ${nRows} rows (${nCols * nRows} positions)"
+
+// ── Emit per-slide tile-geometry sidecar (used by audit_split_reuse.py)
+//    Captures every constant needed to recover any tile's slide-coord bbox
+//    from its filename: tileIdx → (col,row) = ((tileIdx-1) // nCols,
+//    (tileIdx-1) % nCols), origin_µm = (col*STRIDE_UM, row*STRIDE_UM).
+def geomDir = new File("${OUTPUT_ROOT}/${SPLIT}/tile_geometry")
+geomDir.mkdirs()
+def geomFile = new File(geomDir, "${SAMPLE_TAG}.json")
+geomFile.withWriter { wrt ->
+    wrt.write("{\n")
+    wrt.write("  \"sample_tag\": \"${SAMPLE_TAG}\",\n")
+    wrt.write("  \"image_name\": \"${imageName}\",\n")
+    wrt.write("  \"tissue\": \"${TISSUE}\",\n")
+    wrt.write("  \"slide_width_px\": ${server.getWidth()},\n")
+    wrt.write("  \"slide_height_px\": ${server.getHeight()},\n")
+    wrt.write("  \"slide_mpp\": ${slideMPP},\n")
+    wrt.write("  \"export_mpp\": ${EXPORT_MPP},\n")
+    wrt.write("  \"tile_px\": ${TILE_PX},\n")
+    wrt.write("  \"stride_px\": ${STRIDE_PX},\n")
+    wrt.write("  \"overlap_ratio\": ${OVERLAP_RATIO},\n")
+    wrt.write("  \"n_cols\": ${nCols},\n")
+    wrt.write("  \"n_rows\": ${nRows}\n")
+    wrt.write("}\n")
+}
+println "Geometry  : ${geomFile.getAbsolutePath()}"
+
 println "Starting tile export ...\n"
 
 int tileIdx    = 0   // sequential index over ALL grid positions (used for naming)

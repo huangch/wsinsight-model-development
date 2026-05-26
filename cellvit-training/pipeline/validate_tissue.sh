@@ -1,47 +1,52 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# validate.sh -- tissue-agnostic validation driver
+# validate_tissue.sh -- per-tissue validation driver
 #
-# Re-runs only the validation step of the CellViT pipeline (classification
-# report + confusion matrices) against an existing training run.
+# Re-runs only the validation step (classification report + confusion matrices)
+# against an existing training run for ONE tissue.
 #
 # By default, the newest run matching "*_<tissue>-hne-<backbone-lower>" under
 #   cellvit/CellViT-plus-plus/logs_local/
-# is used. A specific run directory or checkpoint may also be given.
+# is used. A specific run directory or checkpoint may also be given as the
+# 4th argument.
 #
 # Usage:
-#   bash validate.sh <tissue>                          # defaults: SAM-H-x40, fold_0, latest run
-#   bash validate.sh <tissue> <backbone> <fold>
-#   bash validate.sh <tissue> <backbone> <fold> <run_dir_or_checkpoint>
+#   bash validate_tissue.sh <tissue>                          # defaults: SAM-H-x40, fold_0, latest hne run
+#   bash validate_tissue.sh <tissue> <backbone> <fold>
+#   bash validate_tissue.sh <tissue> <backbone> <fold> <run_dir_or_checkpoint>
 #
 # Examples:
-#   bash validate.sh colorectal
-#   bash validate.sh breast SAM-H-x40 fold_0
-#   bash validate.sh colorectal SAM-H-x40 fold_0 \
+#   bash validate_tissue.sh colorectal
+#   bash validate_tissue.sh breast SAM-H-x40 fold_0
+#   bash validate_tissue.sh colorectal SAM-H-x40 fold_0 \
 #       /path/to/logs_local/2026-04-20T111253_colorectal-hne-sam-h-x40
+#
+# See train_tissue.sh (Step 3) which delegates to this script.
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
-TISSUE="${1:?usage: validate.sh <tissue> [backbone=SAM-H-x40] [fold=fold_0] [run_dir_or_ckpt]}"
+PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_lib.sh
+source "${PIPELINE_DIR}/_lib.sh"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    sed -n '2,25p' "$0"; exit 0
+fi
+
+TISSUE="${1:?usage: validate_tissue.sh <tissue> [backbone=SAM-H-x40] [fold=fold_0] [run_dir_or_ckpt]}"
 BACKBONE="${2:-SAM-H-x40}"
 FOLD="${3:-fold_0}"
 RUN_OR_CKPT="${4:-}"
 
-LOG_COMMENT="${TISSUE}-hne-$(echo "${BACKBONE}" | tr '[:upper:]' '[:lower:]')"
+LOG_COMMENT="$(_lib::log_comment "${TISSUE}" "hne" "${BACKBONE}")"
 
-# ── Anchor everything to this script's location (see train.sh for rationale) ─
-PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CELLVIT_TRAINING_ROOT="$(cd "${PIPELINE_DIR}/.." && pwd)"
+eval "$(_lib::tissue_paths "${TISSUE}" "${FOLD}" "${BACKBONE}")"
+
+CELLVIT_TRAINING_ROOT="$(_lib::cellvit_training_root)"
 PROJECT_ROOT="$(cd "${CELLVIT_TRAINING_ROOT}/.." && pwd)"
 export PROJECT_ROOT CELLVIT_TRAINING_ROOT
 
-LOG_BASE="${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local"
-PYTHON="${PYTHON:-/opt/anaconda3/envs/wsinsight/bin/python3}"
-CELLVIT_ROOT="${CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus"
-TRAINSET="${CELLVIT_TRAINING_ROOT}/trainingset/${TISSUE}"
-
-VAL_CSV="${TRAINSET}/splits/${FOLD}/val.csv"
-LABEL_MAP="${TRAINSET}/label_map.yaml"
+LOG_BASE="$(_lib::logs_local)"
 
 for f in "${VAL_CSV}" "${LABEL_MAP}"; do
     if [[ ! -f "${f}" ]]; then
@@ -63,7 +68,7 @@ if [[ -n "${RUN_OR_CKPT}" ]]; then
         exit 1
     fi
 else
-    RUN_DIR=$(ls -td "${LOG_BASE}/"*"_${LOG_COMMENT}" 2>/dev/null | head -1)
+    RUN_DIR="$(_lib::find_latest_run "${LOG_COMMENT}")"
     if [[ -z "${RUN_DIR}" ]]; then
         echo "ERROR: no run directory matching *_${LOG_COMMENT} under ${LOG_BASE}" >&2
         exit 1
@@ -76,18 +81,10 @@ if [[ ! -f "${CHECKPOINT}" ]]; then
     exit 1
 fi
 
-echo "[validate.sh] tissue=${TISSUE} backbone=${BACKBONE} fold=${FOLD}"
-echo "[validate.sh] run_dir=${RUN_DIR}"
-echo "[validate.sh] checkpoint=${CHECKPOINT}"
+echo "[validate_tissue.sh] tissue=${TISSUE} backbone=${BACKBONE} fold=${FOLD}"
+echo "[validate_tissue.sh] run_dir=${RUN_DIR}"
+echo "[validate_tissue.sh] checkpoint=${CHECKPOINT}"
 
-# ── Run validation ───────────────────────────────────────────────────────────
-PYTHONPATH="${CELLVIT_ROOT}" "${PYTHON}" -u \
-    "${PIPELINE_DIR}/validate_classifier.py" \
-    --checkpoint "${CHECKPOINT}" \
-    --dataset    "${TRAINSET}" \
-    --filelist   "${VAL_CSV}" \
-    --label-map  "${LABEL_MAP}" \
-    --outdir     "${RUN_DIR}/validation" \
-    2>&1 | tee "${LOG_BASE}/${TISSUE}_validate.log"
+_lib::run_validate "${TISSUE}" "${FOLD}" "${BACKBONE}" "${RUN_DIR}"
 
-echo "[validate.sh] outputs in: ${RUN_DIR}/validation"
+echo "[validate_tissue.sh] outputs in: ${RUN_DIR}/validation"

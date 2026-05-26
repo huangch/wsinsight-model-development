@@ -50,9 +50,10 @@ cellvit-training/qprj/
 kurtorank/qprj/
 data/qprj/
 
-# ── Pipeline logs (machine-local) ───────────────────────────────────────────
+# ── Pipeline logs & derived audit outputs (machine-local) ──────────────────────
 cellvit-training/_logs/
 cellvit-training/logs/
+cellvit-training/pipeline/audit_outputs/
 
 # ── Quarantined / archived (machine-local, never committed) ────────────────
 # Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).

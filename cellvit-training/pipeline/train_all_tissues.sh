@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# train_all_tissues.sh -- loop the make_splits / make_train_config / train.sh
-# pipeline across every tissue that has exported tiles under
+# train_all_tissues.sh -- loop the make_splits / make_train_config /
+# train_tissue.sh pipeline across every tissue that has exported tiles under
 #   trainingset/<tissue>/train/labels/*.csv
 #
 # Skips:
@@ -19,13 +19,15 @@
 # Per-tissue steps:
 #   1. python make_splits.py            --tissue <t>
 #   2. python make_train_config.py      --tissue <t>  [--force]
-#   3. bash   train.sh                  <t> <backbone> <fold> <task>
+#   3. bash   train_tissue.sh           <t> <backbone> <fold> <task>
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
 PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CELLVIT_TRAINING_ROOT="$(cd "${PIPELINE_DIR}/.." && pwd)"
-PYTHON="${PYTHON:-python3}"
+# shellcheck source=_lib.sh
+source "${PIPELINE_DIR}/_lib.sh"
+CELLVIT_TRAINING_ROOT="$(_lib::cellvit_training_root)"
+PYTHON="$(_lib::python)"
 
 BACKBONE="SAM-H-x40"
 FOLD="fold_0"
@@ -51,15 +53,7 @@ done
 # Build tissue list: explicit subset, or every dir under trainingset/ that
 # has at least one *.csv under train/labels and is not the pantissue head.
 if [[ -z "${TISSUES}" ]]; then
-    TISSUES=""
-    for d in "${CELLVIT_TRAINING_ROOT}/trainingset/"*/; do
-        t="$(basename "${d}")"
-        [[ "${t}" == "pantissue" ]] && continue
-        # First non-empty CSV file under train/labels?
-        if compgen -G "${d}/train/labels/*.csv" >/dev/null; then
-            TISSUES+="${t} "
-        fi
-    done
+    TISSUES="$(_lib::tissues_with_labels)"
 fi
 
 if [[ -z "${TISSUES// }" ]]; then
@@ -91,7 +85,7 @@ for t in ${TISSUES}; do
         echo "[train_all_tissues] Reusing existing ${CONFIG}"
     fi
 
-    bash "${PIPELINE_DIR}/train.sh" "${t}" "${BACKBONE}" "${FOLD}" "${TASK}"
+    bash "${PIPELINE_DIR}/train_tissue.sh" "${t}" "${BACKBONE}" "${FOLD}" "${TASK}"
 done
 
 echo

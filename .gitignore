@@ -59,10 +59,6 @@ cellvit-training/logs/
 _to_be_deleted/
 **/_to_be_deleted/
 
-# ── Staging area (review-and-delete) ────────────────────────────────────────
-to-be-deleted/
-**/to-be-deleted/
-
 # ── Python build / cache artifacts ──────────────────────────────────────────
 __pycache__/
 *.py[cod]

@@ -138,7 +138,7 @@ def main() -> int:
     p.add_argument("--fold", default="fold_0")
     p.add_argument("--task", default="pantissue",
                    help="Task tag used inside log_comment so it matches "
-                        "train.sh's `<tissue>-<task>-<backbone>` pattern.")
+                        "train_tissue.sh's `<tissue>-<task>-<backbone>` pattern.")
     p.add_argument("--force", action="store_true",
                    help="Overwrite existing config (default refuses).")
     args = p.parse_args()

@@ -263,8 +263,11 @@ println "\nGrid: ${nCols} cols × ${nRows} rows (${nCols * nRows} positions)"
 
 // ── Emit per-slide tile-geometry sidecar (used by audit_split_reuse.py)
 //    Captures every constant needed to recover any tile's slide-coord bbox
-//    from its filename: tileIdx → (col,row) = ((tileIdx-1) // nCols,
-//    (tileIdx-1) % nCols), origin_µm = (col*STRIDE_UM, row*STRIDE_UM).
+//    from its filename. Loop order is `for row { for col { tileIdx++ } }`,
+//    so tileIdx is 1-based row-major and decodes as:
+//        col = (tileIdx-1) % nCols    (fast axis)
+//        row = (tileIdx-1) // nCols   (slow axis)
+//        origin_µm = (col*STRIDE_UM, row*STRIDE_UM)
 def geomDir = new File("${OUTPUT_ROOT}/${SPLIT}/tile_geometry")
 geomDir.mkdirs()
 def geomFile = new File(geomDir, "${SAMPLE_TAG}.json")

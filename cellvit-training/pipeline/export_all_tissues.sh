@@ -31,8 +31,10 @@
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CELLVIT_TRAINING_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# Shared helpers: _lib::cellvit_training_root, etc.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
+
+CELLVIT_TRAINING_ROOT="$(_lib::cellvit_training_root)"
 GROOVY="${CELLVIT_TRAINING_ROOT}/qupath/export_tiles.groovy"
 
 QPROJ="${QPROJ:-${CELLVIT_TRAINING_ROOT}/../data/qprj/project.qpproj}"

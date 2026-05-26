@@ -525,8 +525,35 @@ def main():
     )
     print(f"  Saved: {report_path}")
 
-    # ── Confusion matrices
+    # ── Machine-readable report + confusion matrix (consumed by
+    #    agent_orchestrator.py to decide next iteration's YAML edits).
+    import json
+    report_dict = classification_report(
+        gt, preds,
+        labels=list(range(num_classes)),
+        target_names=class_names[:num_classes],
+        zero_division=0,
+        output_dict=True,
+    )
+    report_dict["_summary"] = {
+        "accuracy": float(acc),
+        "f1_macro": float(f1),
+        "num_classes": int(num_classes),
+        "n_cells": int(len(preds)),
+    }
+    (outdir / "classification_report.json").write_text(
+        json.dumps(report_dict, indent=2)
+    )
+    print(f"  Saved: {outdir / 'classification_report.json'}")
+
+    # ── Confusion matrices (PNG/SVG for humans, JSON for agent)
     cm = confusion_matrix(gt, preds, labels=list(range(num_classes)))
+    (outdir / "confusion_matrix.json").write_text(json.dumps({
+        "class_names": list(class_names[:num_classes]),
+        "matrix": cm.tolist(),
+    }, indent=2))
+    print(f"  Saved: {outdir / 'confusion_matrix.json'}")
+
     print("\nGenerating confusion matrices ...")
     plot_confusion_matrix(cm, class_names[:num_classes], outdir, normalize=True)
     plot_confusion_matrix(cm, class_names[:num_classes], outdir, normalize=False)

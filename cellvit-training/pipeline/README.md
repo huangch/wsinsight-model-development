@@ -54,7 +54,7 @@ trained CellViT cell-classification head. All scripts are tissue-agnostic.
 | `make_train_config.py` | Renders `trainingset/<tissue>/train_configs/<backbone>/<fold>.yaml` from the pantissue template, injecting class weights, `log_comment`, and resolved paths. |
 | `compute_class_weights.py` | Tally `train/labels/*.csv` → inverse-frequency weights consumed by `make_train_config.py`. |
 | `audit_split_reuse.py` | Per-tissue pixel/cell reuse check between train and val (catches overlap-driven leakage). |
-| `validate_classifier.py` | Pure-python validation: emits per-class precision/recall/F1, AUROC, confusion matrix PDFs. Called by `_lib::run_validate`. |
+| `validate_classifier.py` | Pure-python validation: emits per-class precision/recall/F1, AUROC, confusion matrix PDFs + JSON reports. Called by `_lib::run_validate`. Outputs: `classification_report.{txt,json}` + `confusion_matrix.{json,png,svg}`. |
 
 ## Common workflows
 

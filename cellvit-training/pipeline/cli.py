@@ -1,4 +1,4 @@
-"""argparse dispatcher for ``python -m pipeline_v2 <subcommand>``.
+"""argparse dispatcher for ``python -m pipeline <subcommand>``.
 
 Single place where the command-line surface is defined. Each entry binds a
 subcommand name to ``(add_arguments_fn, run_fn, help_text)``. All wrapper
@@ -45,7 +45,7 @@ _SUBCOMMANDS = {
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="python -m pipeline_v2",
+        prog="python -m pipeline",
         description="cellvit-training pipeline (clean rewrite).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)

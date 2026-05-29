@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# export_all_tissues.sh -- driver for qupath/export_tiles.groovy that runs
+# export_all_tissues.sh -- driver for pipeline/qupath/export_tiles.groovy that runs
 # the export in two passes:
 #
 #   Pass 1: all multi-slide tissues at OVERLAP_RATIO = 0.0 (one global batch).
@@ -35,7 +35,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 CELLVIT_TRAINING_ROOT="$(_lib::cellvit_training_root)"
-GROOVY="${CELLVIT_TRAINING_ROOT}/qupath/export_tiles.groovy"
+GROOVY="${CELLVIT_TRAINING_ROOT}/pipeline/qupath/export_tiles.groovy"
 
 QPROJ="${QPROJ:-${CELLVIT_TRAINING_ROOT}/../data/qprj/project.qpproj}"
 QUPATH="${QUPATH:-QuPath}"

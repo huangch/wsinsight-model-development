@@ -117,10 +117,25 @@ _lib::log_comment() {
 }
 
 # Find the newest run directory matching *_<log_comment> under logs_local/.
+# Searches BOTH the top level and one level deeper (since the trainer may
+# nest a fresh <ts>_<lc>/ inside a pre-existing parent <ts>_<lc>/ when the
+# YAML's `log_dir` points at an older run dir). Returns the newest match by
+# checkpoints/model_best.pth mtime; falls back to dir mtime if no ckpt yet.
 # Echoes the absolute path, or empty string if none found.
 _lib::find_latest_run() {
     local lc="${1:?usage: _lib::find_latest_run <log_comment>}"
-    ls -td "${_CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local/"*"_${lc}" 2>/dev/null | head -1
+    local base="${_CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local"
+    # Prefer run dirs that actually contain a finished model_best.pth.
+    local ckpt
+    ckpt="$(ls -t "${base}/"*"_${lc}/checkpoints/model_best.pth" \
+                  "${base}/"*"_${lc}/"*"_${lc}/checkpoints/model_best.pth" \
+                  2>/dev/null | head -1)"
+    if [[ -n "${ckpt}" ]]; then
+        dirname "$(dirname "${ckpt}")"
+        return
+    fi
+    # No checkpoint yet — fall back to newest matching directory.
+    ls -td "${base}/"*"_${lc}" "${base}/"*"_${lc}/"*"_${lc}" 2>/dev/null | head -1
 }
 
 # ── Validation invocation ────────────────────────────────────────────────────

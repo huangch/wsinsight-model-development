@@ -62,8 +62,9 @@ LOGS_LOCAL = CELLVIT_TRAINING_ROOT / "cellvit" / "CellViT-plus-plus" / "logs_loc
 # ── Policy thresholds (tuneable; document the *why* if you change these) ──
 MIN_IMPROVEMENT = 0.005      # macro-F1 delta required to accept a new run
 WEAK_F1_THRESHOLD = 0.60     # below this → class is "weak", up-weight it
-WEIGHT_BOOST = 1.5           # multiply weight_list[c] by this
-WEIGHT_CAP = 20.0            # never let any weight exceed this
+WEIGHT_BOOST = 1.5           # multiply weight_list[c] by this, then rescale
+WEIGHT_CAP = 20.0            # never let any weight exceed this (post-rescale)
+WEIGHT_BUDGET_RATIO = 1.0    # sum(weights) target = N_classes * this ratio
 DROP_RATE_STEP = 0.05        # additive bump per Lever-C iteration
 DROP_RATE_CAP = 0.30         # cap to avoid destroying learning
 LR_DECAY = 0.5               # multiplicative cut per Lever-D iteration
@@ -215,8 +216,13 @@ def _resolve_class_idx_by_name(yaml_text: str, name: str) -> int:
 
 
 def _apply_lever_A(yaml_text: str, report: dict, log: dict) -> str | None:
-    """Boost weight_list[c] for the weakest class. Returns new YAML or None
-    if no class qualifies (then caller should try a different lever)."""
+    """Boost weight_list[c] for the weakest class, then **rescale all weights
+    so the total budget (sum) is preserved**. This makes Lever A a
+    redistribution -- when one class goes up, the others drop proportionally
+    -- instead of an unbounded expansion of total attention.
+
+    Returns new YAML or None if no class qualifies (then caller should try a
+    different lever)."""
     weakest = _pick_weakest_class(report)
     if weakest is None:
         log["reason"] = "no weak class (all F1 >= threshold)"
@@ -224,21 +230,34 @@ def _apply_lever_A(yaml_text: str, report: dict, log: dict) -> str | None:
     _, name, f1 = weakest
     idx = _resolve_class_idx_by_name(yaml_text, name)
     w = _get_weight_list(yaml_text)
+    n_classes = len(w)
+    budget = n_classes * WEIGHT_BUDGET_RATIO
+
     old = w[idx]
-    new = min(old * WEIGHT_BOOST, WEIGHT_CAP)
-    if abs(new - old) < 1e-6:
-        log["reason"] = f"class '{name}' weight already at cap ({WEIGHT_CAP})"
+    boosted = w.copy()
+    boosted[idx] = min(old * WEIGHT_BOOST, WEIGHT_CAP)
+    # Rescale so sum(boosted) == budget. This redistributes the cost of the
+    # boost across all other classes proportionally.
+    s = sum(boosted)
+    if s <= 0:
+        log["reason"] = "weight sum is non-positive; cannot rescale"
         return None
-    w[idx] = new
+    scale = budget / s
+    new_w = [round(min(x * scale, WEIGHT_CAP), 4) for x in boosted]
+    if abs(new_w[idx] - old) < 1e-4:
+        log["reason"] = f"class '{name}' weight unchanged after rescale (at cap)"
+        return None
     log["action"] = {
         "lever": "A",
         "class_idx": idx,
         "class_name": name,
         "class_f1": f1,
         "weight_old": old,
-        "weight_new": new,
+        "weight_new": new_w[idx],
+        "budget": budget,
+        "budget_used": round(sum(new_w), 4),
     }
-    return _set_weight_list(yaml_text, w)
+    return _set_weight_list(yaml_text, new_w)
 
 
 def _apply_lever_C(yaml_text: str, report: dict, log: dict) -> str | None:

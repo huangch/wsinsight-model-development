@@ -1,4 +1,4 @@
-"""``pipeline_v2`` — unified CLI front-end for the cellvit-training chain.
+"""``pipeline`` — unified CLI front-end for the cellvit-training chain.
 
 End-to-end (Xenium → trained CellViT head):
 

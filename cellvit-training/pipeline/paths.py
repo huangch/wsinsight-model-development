@@ -95,9 +95,9 @@ CELLVIT_BACKBONE_WEIGHTS = (CELLVIT_TRAINING_ROOT / "cellvit" / "models"
                             / f"CellViT-{DEFAULT_BACKBONE}.pth")
 
 
-# --- Pipeline scripts (v1 — delegated to by v2 wrappers) --------------------
+# --- Pipeline scripts (v1 — delegated to by the wrappers in this package) ----
 
-PIPELINE_V1_DIR = CELLVIT_TRAINING_ROOT / "pipeline"
+PIPELINE_V1_DIR = CELLVIT_TRAINING_ROOT / "pipeline.old"
 GROOVY_DIR = PIPELINE_V1_DIR / "qupath"
 LOGS_DIR = CELLVIT_TRAINING_ROOT / "_logs"
 

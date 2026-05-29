@@ -52,13 +52,13 @@ data/qprj/
 
 # ── Pipeline logs & derived audit outputs (machine-local) ──────────────────────
 cellvit-training/_logs/
-cellvit-training/pipeline/audit_outputs/
+cellvit-training/**/audit_outputs/
 
 # ── One-time job outputs (machine-local; re-generatable, never committed) ───
 # Per-job logs from reannotate_xenium.py (reannotate/, reannotate_pantissue/).
 kurtorank/logs/
 # Dated AI-agent orchestration runs (decision_log.jsonl + derived fold configs).
-cellvit-training/pipeline/agent_runs/
+cellvit-training/**/agent_runs/
 
 # ── Quarantined / archived (machine-local, never committed) ────────────────
 # Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).

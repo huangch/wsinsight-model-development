@@ -54,10 +54,19 @@ data/qprj/
 cellvit-training/_logs/
 cellvit-training/pipeline/audit_outputs/
 
+# ── One-time job outputs (machine-local; re-generatable, never committed) ───
+# Per-job logs from reannotate_xenium.py (reannotate/, reannotate_pantissue/).
+kurtorank/logs/
+# Dated AI-agent orchestration runs (decision_log.jsonl + derived fold configs).
+cellvit-training/pipeline/agent_runs/
+
 # ── Quarantined / archived (machine-local, never committed) ────────────────
 # Match at any depth (project-root _to_be_deleted/ holds ~170 GB of stale runs).
+# Both the underscore and hyphen spellings are honored.
 _to_be_deleted/
 **/_to_be_deleted/
+to-be-deleted/
+**/to-be-deleted/
 
 # ── Python build / cache artifacts ──────────────────────────────────────────
 __pycache__/
@@ -97,3 +106,22 @@ logs_local/
 # ── Notebook outputs (keep notebooks; strip outputs at commit time) ─────────
 *.ipynb_checkpoints
 .github/skills/
+
+# ── Temporary files (editor / process scratch, never committed) ─────────────
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*~
+nohup.out
+core.*
+*.pid
+
+# ── Dev scratch (throwaway code/data; use these known-ignored locations) ────
+scratch/
+sandbox/
+**/scratch/
+**/sandbox/
+*.scratch.*
+Untitled*.ipynb

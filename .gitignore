@@ -52,7 +52,6 @@ data/qprj/
 
 # ── Pipeline logs & derived audit outputs (machine-local) ──────────────────────
 cellvit-training/_logs/
-cellvit-training/logs/
 cellvit-training/pipeline/audit_outputs/
 
 # ── Quarantined / archived (machine-local, never committed) ────────────────

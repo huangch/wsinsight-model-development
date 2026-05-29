@@ -3,9 +3,17 @@ compute_class_weights.py
 ------------------------
 Tally per-tile cell label CSVs under
     trainingset/<tissue>/train/labels/*.csv
-and emit inverse-frequency class weights using the same formula used for the
-pantissue head:
-    weight = min(10.0 / class_percent, 10.0)
+and emit inverse-frequency class weights, rescaled so the **sum equals the
+number of classes** (i.e. the average weight is 1.0).
+
+Rationale -- the loss weight is a *fixed attention budget*: boosting a rare
+class must come at the cost of others, otherwise the gradient norm balloons
+and the model is pulled away from a good initialization. Keeping sum(w) == N
+lets us tune relative emphasis without changing total signal strength.
+
+Formula:
+    1.  raw = min(cap / class_percent, cap)             # inverse-frequency, capped
+    2.  weight = raw * N_classes / sum(raw)             # rescale to budget
 
 Prints a comment block (one line per class, matching the pantissue config
 style) and a Python-list `weight_list` ready to paste into
@@ -104,16 +112,31 @@ def main() -> int:
     print(f"# Tissue: {args.tissue}")
     print(f"# Label dir: {label_dir}")
     print(f"# Total detections: {total:,}")
-    print("# Inverse-frequency weights (weight = min(10 / class_percent, 10.0)).")
-    weights: list[float] = []
+    print(f"# Inverse-frequency weights, rescaled so sum(weight) == {n_classes} "
+          f"(mean weight 1.0); per-class cap before rescale = {args.cap}.")
+    raw: list[float] = []
+    pcts: list[float] = []
     for ci in range(n_classes):
-        name = label_map.get(ci, "?")
         n = counts.get(ci, 0)
         pct = 100.0 * n / total if total else 0.0
-        w = _weight(pct) if args.cap == 10.0 else min(args.cap / pct, args.cap) if pct > 0 else args.cap
-        weights.append(round(w, 2))
-        cap_mark = "  (capped)" if pct > 0 and (args.cap / pct) > args.cap else ""
-        print(f"# class {ci:>2}  {name:<{width}}  {pct:6.2f}%  ->  weight {w:5.2f}{cap_mark}")
+        pcts.append(pct)
+        w = _weight(pct) if args.cap == 10.0 else (
+            min(args.cap / pct, args.cap) if pct > 0 else args.cap
+        )
+        raw.append(w)
+
+    # ── Rescale to a fixed budget: sum(weights) == n_classes ──────────────
+    raw_sum = sum(raw)
+    scale = n_classes / raw_sum if raw_sum > 0 else 1.0
+    weights: list[float] = [round(w * scale, 3) for w in raw]
+
+    for ci in range(n_classes):
+        name = label_map.get(ci, "?")
+        cap_mark = ("  (capped pre-rescale)"
+                    if pcts[ci] > 0 and (args.cap / pcts[ci]) > args.cap else "")
+        print(f"# class {ci:>2}  {name:<{width}}  {pcts[ci]:6.2f}%  ->  "
+              f"weight {weights[ci]:5.3f}{cap_mark}")
+    print(f"# (sum of weights = {sum(weights):.3f}, target = {n_classes})")
 
     print()
     print(f"weight_list: {weights}")

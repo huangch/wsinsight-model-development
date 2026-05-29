@@ -29,7 +29,7 @@ Usage:
 Prerequisites:
   * `train/tile_geometry/<sample>.json` must exist for every sample
     appearing in `splits/<fold>/{train,val}.csv`. If missing, run
-    `qupath/dump_tile_geometry.groovy` once to backfill.
+    `pipeline/qupath/dump_tile_geometry.groovy` once to backfill.
 
 Output:
   * `<out>/split_reuse_<tissue>_<fold>.json` — full per-class breakdown.
@@ -79,7 +79,7 @@ def _load_geometry(tissue_root: Path) -> dict:
     geom_dir = tissue_root / "train" / "tile_geometry"
     if not geom_dir.is_dir():
         raise SystemExit(
-            f"ERROR: {geom_dir} not found. Run qupath/dump_tile_geometry.groovy "
+            f"ERROR: {geom_dir} not found. Run pipeline/qupath/dump_tile_geometry.groovy "
             f"to backfill geometry sidecars for already-exported slides."
         )
     geom = {}

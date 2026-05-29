@@ -21,12 +21,12 @@ cellvit-training/
 │   ├── train_tissue.sh           # 4-step training wrapper (one tissue)
 │   ├── train_all_tissues.sh      # loop the per-tissue pipeline across every tissue
 │   ├── validate_tissue.sh        # re-run validation against a finished run
-│   └── validate_classifier.py
-├── qupath/                  # QuPath Groovy helpers (CLI-batch capable)
-│   ├── run_qust_pipeline.groovy  # tissue detection + StarDist + Xenium cluster transfer
-│   ├── load_mapping.groovy       # cluster_id → label-name on detections
-│   ├── reset_clusters.groovy     # revert PathClass to Xenium cluster_id (for re-apply)
-│   └── export_tiles.groovy       # detections → tile PNG + per-tile CSV
+│   ├── validate_classifier.py
+│   └── qupath/                   # QuPath Groovy helpers (CLI-batch capable)
+│       ├── run_qust_pipeline.groovy  # tissue detection + StarDist + Xenium cluster transfer
+│       ├── load_mapping.groovy       # cluster_id → label-name on detections
+│       ├── reset_clusters.groovy     # revert PathClass to Xenium cluster_id (for re-apply)
+│       └── export_tiles.groovy       # detections → tile PNG + per-tile CSV
 ├── trainingset/             # exported tiles + per-fold training configs
 │   └── <tissue>/
 │       ├── label_map.yaml   # canonical int ↔ label-name table
@@ -101,15 +101,15 @@ For a tissue named `<tissue>` (e.g. `pantissue`, `breast`, `heart`):
 #    image in the QuPath project). Runs PetesSimpleTissueDetection +
 #    StarDistCellNucleusDetection + XeniumAnnotation in one go:
 QuPath script -s -p ../data/qprj/project.qpproj \
-    qupath/run_qust_pipeline.groovy
+    pipeline/qupath/run_qust_pipeline.groovy
 
 # 2. Remap cluster_id → pantissue label on every detection (CLI batch):
 QuPath script -s -p ../data/qprj/project.qpproj \
     -a /abs/path/celltype_assignment_pantissue_label.csv \
-    qupath/load_mapping.groovy
+    pipeline/qupath/load_mapping.groovy
 
 #    (To re-apply an updated celltype_assignment_*.csv without re-running
-#     tissue detection + StarDist, run qupath/reset_clusters.groovy first to
+#     tissue detection + StarDist, run pipeline/qupath/reset_clusters.groovy first to
 #     revert PathClass back to the Xenium cluster_id, then re-run
 #     load_mapping.groovy with the new CSV.)
 
@@ -149,13 +149,13 @@ to TorchScript at 1024×1024.
 1. Add the tissue's H&E images to `../data/qprj/project.qpproj` under
    `../data/xenium/<tissue>/<sample>/`. The `data/xenium/<tissue>/` segment
    is what `export_tiles.groovy` keys on to auto-route output.
-2. Curate labels (headless): `qupath/run_qust_pipeline.groovy` →
-   `qupath/load_mapping.groovy` with the sample's
+2. Curate labels (headless): `pipeline/qupath/run_qust_pipeline.groovy` →
+   `pipeline/qupath/load_mapping.groovy` with the sample's
    `celltype_assignment_pantissue_label.csv`.
 3. `cp trainingset/pantissue/label_map.yaml trainingset/<tissue>/label_map.yaml`
    (every tissue currently uses the canonical 12-class pantissue vocabulary;
    identical copy per tissue).
-4. `QuPath script -p ../data/qprj/project.qpproj qupath/export_tiles.groovy`
+4. `QuPath script -p ../data/qprj/project.qpproj pipeline/qupath/export_tiles.groovy`
    — exports every tissue, including the new one, in one resumable batch.
    For single-slide tissues, add `-a <tissue> -a 0.5` to enable 50% tile
    overlap (e.g. `-a heart -a 0.5`).
@@ -338,12 +338,12 @@ point of the QuST paper). The join therefore happens **inside QuPath**:
    `"2"`, …).
 
 Steps 1–3 are batched headless across every image in the QuPath project by
-[`qupath/run_qust_pipeline.groovy`](qupath/run_qust_pipeline.groovy) —
+[`pipeline/qupath/run_qust_pipeline.groovy`](pipeline/qupath/run_qust_pipeline.groovy) —
 see the End-to-end pipeline block at the top of this README for the CLI
 invocation.
 
 4. **Cluster → label remap** — run
-   [`qupath/load_mapping.groovy`](qupath/load_mapping.groovy) with the
+   [`pipeline/qupath/load_mapping.groovy`](pipeline/qupath/load_mapping.groovy) with the
    sample's `celltype_assignment_<tissue>_label.csv` (2 columns:
    `classification, cell_type`). PathClass becomes the label string
    (`"tumor"`, `"lymphoid"`, …).
@@ -353,7 +353,7 @@ invocation.
 
 To re-apply an updated `celltype_assignment_*.csv` without re-running
 tissue detection + StarDist, use
-[`qupath/reset_clusters.groovy`](qupath/reset_clusters.groovy) first to
+[`pipeline/qupath/reset_clusters.groovy`](pipeline/qupath/reset_clusters.groovy) first to
 revert each detection's `PathClass` back to its Xenium cluster id, then
 run `load_mapping.groovy` with the new CSV.
 
@@ -479,7 +479,7 @@ tile stem per line, **no header**:
 ```
 
 This file is hand-authored and tracked in git — it is the single int ↔
-label-name source consumed by both `qupath/export_tiles.groovy` and the
+label-name source consumed by both `pipeline/qupath/export_tiles.groovy` and the
 training config below.
 
 ## 11. Training Config Template
@@ -651,8 +651,8 @@ Before handing the dataset to training, verify:
 
 ## 14. Reference Implementations
 
-- QuPath cluster→label remap: [`qupath/load_mapping.groovy`](qupath/load_mapping.groovy)
-- QuPath tile/label export: [`qupath/export_tiles.groovy`](qupath/export_tiles.groovy)
+- QuPath cluster→label remap: [`pipeline/qupath/load_mapping.groovy`](pipeline/qupath/load_mapping.groovy)
+- QuPath tile/label export: [`pipeline/qupath/export_tiles.groovy`](pipeline/qupath/export_tiles.groovy)
 - Train/val splits: [`pipeline/make_splits.py`](pipeline/make_splits.py)
 - Worked training configs:
   [`trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml`](trainingset/pantissue/train_configs/SAM-H-x40/fold_0.yaml)

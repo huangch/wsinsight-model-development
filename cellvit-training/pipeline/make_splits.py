@@ -3,7 +3,7 @@ make_splits.py
 --------------
 Build train/val splits from exported tiles.
 
-Tiles produced by qupath/export_tiles.groovy are named
+Tiles produced by pipeline/qupath/export_tiles.groovy are named
     <SAMPLE_TAG>_tile_<NNNNN>[ _<aug>].png/.csv
 where SAMPLE_TAG identifies the source slide.
 

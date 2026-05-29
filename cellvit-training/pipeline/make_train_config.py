@@ -122,11 +122,20 @@ def _build(template: str, *, tissue: str, label_map: dict[int, str],
         "  " + ln for ln in proc.stdout.splitlines()
         if ln.startswith("#") and "weight" in ln.lower() or ln.startswith("# class")
     )
-    out = re.sub(
-        r"(  # [^\n]*\n)+  weight_list:.*$",
-        comment_block + "\n" + weight_line,
-        out, count=1, flags=re.M,
-    )
+    # Handle BOTH inline (`weight_list: [...]`) and multi-line (`weight_list:\n  - x\n...`)
+    # forms. Strip any preceding consecutive "  # ..." comment lines, then the
+    # weight_list itself (whichever form), and replace with a fresh comment
+    # banner + inline weight_line.
+    inline_pat = r"(  # [^\n]*\n)*  weight_list:[ \t]*\[[^\]]*\][ \t]*$"
+    block_pat = r"(  # [^\n]*\n)*  weight_list:[ \t]*\n(?:  - [-\d.eE+]+\n)+"
+    if re.search(inline_pat, out, flags=re.M):
+        out = re.sub(inline_pat, comment_block + "\n" + weight_line,
+                     out, count=1, flags=re.M)
+    elif re.search(block_pat, out, flags=re.M):
+        out = re.sub(block_pat, comment_block + "\n" + weight_line + "\n",
+                     out, count=1, flags=re.M)
+    else:
+        raise RuntimeError("Could not locate weight_list in template")
 
     return out
 

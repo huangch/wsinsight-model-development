@@ -2,7 +2,7 @@ logging:
   mode: offline
   project: cellvit-pantissue
   notes: pantissue-pantissue-12class-SAM-H-x40
-  log_comment: pantissue-pantissue-sam-h-x40
+  log_comment: pantissue-pantissue-sam-h-x40__iter1_a
   wandb_dir: /workspace/wsinsight/wsinsight-model-development/cellvit-training/cellvit/CellViT-plus-plus/logs_local
   log_dir: /workspace/wsinsight/wsinsight-model-development/cellvit-training/cellvit/CellViT-plus-plus/logs_local/2026-05-22T125957_pantissue-pantissue-sam-h-x40
   level: Debug
@@ -59,7 +59,7 @@ training:
   # Fix: flatten weight_list to uniform 1.0 (unweighted CE) + add label_smoothing
   # 0.1 to counter overconfidence. weighted_sampling stays true (the binary
   # resampler is a no-op here: weight_factor*positives > negatives keeps all cells).
-  weight_list: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  weight_list: [0.96, 0.96, 0.96, 0.96, 0.96, 0.96, 0.96, 0.96, 1.44, 0.96, 0.96, 0.96]
   scheduler:
     scheduler_type: exponential
     gamma: 0.95

@@ -154,11 +154,28 @@ def _set_log_comment(yaml_text: str, new_comment: str) -> str:
 # ── Validation-output reader ─────────────────────────────────────────────────
 
 def _find_run_dir(log_comment: str) -> Path | None:
-    """Return newest run dir matching '*_<log_comment>' under logs_local/."""
+    """Return the newest *actual* run dir for ``log_comment`` under logs_local/.
+
+    The trainer nests the real run dir one level deep, e.g.
+    ``logs_local/<outer-ts>_<log_comment>/<run-ts>_<log_comment>/``. Both the
+    outer wrapper and the inner run dir share the ``_<log_comment>`` suffix, so a
+    plain ``glob('*_<log_comment>')`` can return the wrapper (which has no
+    ``validation/``). Search recursively and prefer dirs that actually contain
+    the validation report; fall back to the newest matching dir otherwise.
+    """
     if not LOGS_LOCAL.is_dir():
         return None
-    matches = sorted(LOGS_LOCAL.glob(f"*_{log_comment}"), key=os.path.getmtime)
-    return matches[-1] if matches else None
+    matches = sorted(LOGS_LOCAL.rglob(f"*_{log_comment}"), key=os.path.getmtime)
+    matches = [m for m in matches if m.is_dir()]
+    if not matches:
+        return None
+    with_validation = [
+        m for m in matches
+        if (m / "validation" / "classification_report.json").is_file()
+    ]
+    if with_validation:
+        return with_validation[-1]
+    return matches[-1]
 
 
 def _read_validation(run_dir: Path) -> dict[str, Any]:

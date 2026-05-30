@@ -50,21 +50,16 @@ training:
   mixed_precision: true
   eval_every: 1
   weighted_sampling: true
-  # Inverse-frequency weights, rescaled so sum(weight) == 12 (mean weight 1.0); per-class cap before rescale = 10.0.
-  # class  0  lymphoid                    26.85%  ->  weight 0.101
-  # class  1  other_stromal_mesenchymal    5.19%  ->  weight 0.524
-  # class  2  epithelial                  15.61%  ->  weight 0.174
-  # class  3  tumor                       16.84%  ->  weight 0.161
-  # class  4  myeloid                      9.11%  ->  weight 0.299
-  # class  5  endothelial                  4.68%  ->  weight 0.581
-  # class  6  neural                       4.30%  ->  weight 0.633
-  # class  7  plasma                       2.31%  ->  weight 1.175
-  # class  8  other_granulocyte            0.19%  ->  weight 2.719  (capped pre-rescale)
-  # class  9  fibroblast                  14.06%  ->  weight 0.193
-  # class 10  neutrophil                   0.12%  ->  weight 2.719  (capped pre-rescale)
-  # class 11  mast                         0.73%  ->  weight 2.719  (capped pre-rescale)
-  # (sum of weights = 11.998, target = 12)
-  weight_list: [0.101, 0.524, 0.174, 0.161, 0.299, 0.581, 0.633, 1.175, 2.719, 0.193, 2.719, 2.719]
+  label_smoothing: 0.1
+  # Loss-design experiment (2026-05-29): three LRs (5e-5, 2.5e-5, 1e-5) all gave
+  # the same failure -- best checkpoint at epoch 1, weighted CE loss rising every
+  # epoch while accuracy stayed flat (~0.55) and AUROC drifted down. That is the
+  # signature of the aggressive inverse-frequency weighting (rare-class weights up
+  # to 2.719) inflating the loss as logits sharpen, NOT an optimizer/LR problem.
+  # Fix: flatten weight_list to uniform 1.0 (unweighted CE) + add label_smoothing
+  # 0.1 to counter overconfidence. weighted_sampling stays true (the binary
+  # resampler is a no-op here: weight_factor*positives > negatives keeps all cells).
+  weight_list: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   scheduler:
     scheduler_type: exponential
     gamma: 0.95

@@ -23,6 +23,9 @@ cellvit-training/trainingset/*/splits/
 cellvit-training/trainingset/*/labels/
 cellvit-training/trainingset/*/cache/
 cellvit-training/trainingset/*/cell_labels_*.csv
+# Machine-local dataset backups (e.g. label-remap snapshots); never committed.
+cellvit-training/trainingset/*/labels_backup_*.tar.gz
+cellvit-training/trainingset/*/cache_types_backup_*/
 # NOTE: label_map.yaml is the canonical int<->name source (see export_tiles.groovy).
 # It MUST stay tracked; do not add it to .gitignore.
 # Per-tissue train_configs are derived from the pantissue template by

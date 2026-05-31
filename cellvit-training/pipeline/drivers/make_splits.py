@@ -41,7 +41,8 @@ from collections import defaultdict
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent
+# Driver lives under <cellvit-training>/pipeline/drivers/ -> root is two up.
+CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent.parent
 
 # Tile-suffix pattern: matches "_tile_00042" optionally followed by an
 # augmentation tag like "_hflip", "_rot90". Everything before this suffix is

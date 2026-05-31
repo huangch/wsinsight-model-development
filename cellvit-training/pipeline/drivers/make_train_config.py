@@ -23,7 +23,8 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent
+# Driver lives under <cellvit-training>/pipeline/drivers/ -> root is two up.
+CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent.parent
 TEMPLATE_TISSUE = "pantissue"
 
 

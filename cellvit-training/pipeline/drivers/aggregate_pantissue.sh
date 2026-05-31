@@ -16,7 +16,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CELLVIT_TRAINING_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# Script lives under <cellvit-training>/pipeline/drivers/ -> root is two up.
+CELLVIT_TRAINING_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TRAININGSET="${CELLVIT_TRAINING_ROOT}/trainingset"
 TEMPLATES="${CELLVIT_TRAINING_ROOT}/templates"
 

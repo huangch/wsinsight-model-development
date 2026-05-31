@@ -55,7 +55,9 @@ from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent
+# This driver lives under <cellvit-training>/pipeline/drivers/, so the training
+# root is two levels up (was one level up when it lived in pipeline.old/).
+CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent.parent
 TRAININGSET = CELLVIT_TRAINING_ROOT / "trainingset"
 LOGS_LOCAL = CELLVIT_TRAINING_ROOT / "cellvit" / "CellViT-plus-plus" / "logs_local"
 
@@ -442,8 +444,19 @@ def main() -> int:
         _log(decision | {"applied": True, "yaml": str(iter_yaml),
                          "log_comment": new_log_comment})
 
-        _launch_training(tissue, backbone, fold, task, iter_yaml, args.dry_run)
-        run_dir = _find_run_dir(new_log_comment)
+        # Resume support: if this exact iteration was already trained AND
+        # validated in a previous (possibly interrupted) run, reuse it instead
+        # of spending another full training pass. Iterations are deterministic
+        # given the baseline, so the on-disk run matches what we would produce.
+        existing = _find_run_dir(new_log_comment)
+        if (existing is not None
+                and (existing / "validation"
+                     / "classification_report.json").is_file()):
+            print(f"  [resume] reusing trained+validated run: {existing}")
+            run_dir = existing
+        else:
+            _launch_training(tissue, backbone, fold, task, iter_yaml, args.dry_run)
+            run_dir = _find_run_dir(new_log_comment)
         if run_dir is None:
             print(f"  ERROR: no run_dir for {new_log_comment}; aborting")
             _log({"phase": "iter_failed", "iter": it,

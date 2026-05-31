@@ -15,7 +15,9 @@
 # _PIPELINE_DIR is where this file lives. _CELLVIT_TRAINING_ROOT is its parent.
 
 _LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_CELLVIT_TRAINING_ROOT="$(cd "${_LIB_DIR}/.." && pwd)"
+# This lib now lives under <cellvit-training>/pipeline/drivers/, so the training
+# root is two levels up (was one level up when it lived in pipeline.old/).
+_CELLVIT_TRAINING_ROOT="$(cd "${_LIB_DIR}/../.." && pwd)"
 
 _lib::pipeline_dir()           { echo "${_LIB_DIR}"; }
 _lib::cellvit_training_root()  { echo "${_CELLVIT_TRAINING_ROOT}"; }
@@ -125,17 +127,28 @@ _lib::log_comment() {
 _lib::find_latest_run() {
     local lc="${1:?usage: _lib::find_latest_run <log_comment>}"
     local base="${_CELLVIT_TRAINING_ROOT}/cellvit/CellViT-plus-plus/logs_local"
-    # Prefer run dirs that actually contain a finished model_best.pth.
-    local ckpt
-    ckpt="$(ls -t "${base}/"*"_${lc}/checkpoints/model_best.pth" \
-                  "${base}/"*"_${lc}/"*"_${lc}/checkpoints/model_best.pth" \
-                  2>/dev/null | head -1)"
-    if [[ -n "${ckpt}" ]]; then
-        dirname "$(dirname "${ckpt}")"
-        return
+    [[ -d "${base}" ]] || return 0
+    # The trainer may place the run dir at the top level (base/<ts>_<lc>/) OR
+    # nest it one level inside a pre-existing wrapper whose own name uses a
+    # DIFFERENT log_comment -- e.g. the orchestrator's per-iteration runs land
+    # in base/<ts>_<base-comment>/<ts>_<lc>/, where the wrapper carries the
+    # baseline comment and only the inner dir carries the iter suffix. Match the
+    # inner dir by its trailing _<lc>, regardless of any wrapper's name. Prefer
+    # the newest dir that already has a finished model_best.pth.
+    local hit
+    hit="$(find "${base}" -type f -path "*_${lc}/checkpoints/model_best.pth" \
+                -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 \
+                | cut -d' ' -f2-)"
+    if [[ -n "${hit}" ]]; then
+        dirname "$(dirname "${hit}")"
+        return 0
     fi
-    # No checkpoint yet — fall back to newest matching directory.
-    ls -td "${base}/"*"_${lc}" "${base}/"*"_${lc}/"*"_${lc}" 2>/dev/null | head -1
+    # No checkpoint yet -- newest matching directory by mtime (return 0 even when
+    # there is no match, so callers under `set -e` can test for an empty result
+    # instead of aborting on a non-zero glob/ls exit).
+    find "${base}" -mindepth 1 -maxdepth 2 -type d -name "*_${lc}" \
+         -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-
+    return 0
 }
 
 # ── Validation invocation ────────────────────────────────────────────────────

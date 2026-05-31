@@ -44,7 +44,18 @@ TASK="${4:-hne}"
 
 # Resolve all per-tissue paths in one call (sets TRAINSET, CONFIG, VAL_CSV, LABEL_MAP).
 eval "$(_lib::tissue_paths "${TISSUE}" "${FOLD}" "${BACKBONE}")"
-LOG_COMMENT="$(_lib::log_comment "${TISSUE}" "${TASK}" "${BACKBONE}")"
+
+# Derive log_comment from the training YAML itself (the single source of truth).
+# The orchestrator bakes a per-iteration suffix (e.g. __iter1_a) into the YAML's
+# logging.log_comment, and CellViT++ uses that exact string as the run-dir
+# suffix under logs_local/. Recomputing it from tissue/task/backbone would DROP
+# that suffix, making Step 2 (_lib::find_latest_run) resolve the wrong
+# (baseline) run dir and validate the wrong checkpoint. Fall back to the
+# computed value only when the YAML has no log_comment field.
+LOG_COMMENT="$(awk -F': *' '/^[[:space:]]*log_comment:/{gsub(/["[:space:]]/,"",$2); print $2; exit}' "${CONFIG}")"
+if [[ -z "${LOG_COMMENT}" ]]; then
+    LOG_COMMENT="$(_lib::log_comment "${TISSUE}" "${TASK}" "${BACKBONE}")"
+fi
 
 CELLVIT_TRAINING_ROOT="$(_lib::cellvit_training_root)"
 PROJECT_ROOT="$(cd "${CELLVIT_TRAINING_ROOT}/.." && pwd)"

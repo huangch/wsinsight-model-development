@@ -37,7 +37,10 @@ import sys
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-cellvit_root = os.path.join(current_dir, "cellvit", "CellViT-plus-plus")
+# This script lives under <cellvit-training>/pipeline/drivers/, so the
+# CellViT-plus-plus repo is two levels up (was one level up in pipeline.old/).
+cellvit_training_root = os.path.dirname(os.path.dirname(current_dir))
+cellvit_root = os.path.join(cellvit_training_root, "cellvit", "CellViT-plus-plus")
 sys.path.insert(0, cellvit_root)
 
 import numpy as np
@@ -151,7 +154,7 @@ def load_models(checkpoint_path: str, device: torch.device,
             # etc.), look for a same-basename file under the in-tree models dir
             # `<cellvit-training>/cellvit/models/`.
             from pathlib import Path as _Path
-            cellvit_training_root = _Path(__file__).resolve().parent.parent
+            cellvit_training_root = _Path(__file__).resolve().parent.parent.parent
             candidate = cellvit_training_root / "cellvit" / "models" / os.path.basename(cellvit_path)
             if candidate.is_file():
                 print(f"  Remapping stale cellvit_path -> {candidate}")

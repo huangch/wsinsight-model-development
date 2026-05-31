@@ -45,7 +45,8 @@ from collections import defaultdict
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent
+# Driver lives under <cellvit-training>/pipeline/drivers/ -> root is two up.
+CELLVIT_TRAINING_ROOT = SCRIPT_DIR.parent.parent
 
 # Tile filename:  <SAMPLE_TAG>_tile_<NNNNN>[ _<aug>]
 # Augmented variants share the same slide-coord bbox as their base tile,

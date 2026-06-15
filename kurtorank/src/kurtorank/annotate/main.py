@@ -108,6 +108,7 @@ TISSUE_TYPES: tuple[str, ...] = (
     "cervix",
     "circulating",
     "colorectal",
+    "head_neck",
     "heart",
     "immune",
     "kidney",

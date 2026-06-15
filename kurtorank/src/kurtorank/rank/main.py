@@ -105,6 +105,7 @@ TISSUE_MAP: dict[str, list[str]] = {
     "cervix":      ["uterus"],  # no cervix label; use uterus
     "circulating": ["blood", "bone marrow"],
     "colorectal":  ["colon", "large intestine", "small intestine"],
+    "head_neck":   ["tongue", "salivary gland"],  # no head/neck label; oral/salivary closest
     "heart":       ["heart"],
     "immune":      ["lymph node", "blood", "bone marrow", "spleen", "thymus"],
     "kidney":      ["kidney"],
@@ -262,6 +263,15 @@ SUBTYPE_OVERRIDES: dict[str, dict] = {
     # Prostate
     "Luminal epithelial cells":         {"must_any": ["luminal"]},
     "Basal epithelial cells":           {"must_any": ["basal"]},
+
+    # Head & neck (HNSCC) -- steer to squamous/basal normal lineage
+    "Head and neck squamous cell carcinoma cells":
+                                        {"must_any": ["squamous", "basal",
+                                                      "keratinocyte"]},
+    "HPV-positive oropharyngeal squamous cell carcinoma cells":
+                                        {"must_any": ["squamous", "basal",
+                                                      "keratinocyte"]},
+    "Salivary gland acinar cells":      {"must_any": ["acinar"]},
 
     # Lung
     "Alveolar type 1 cells":            {"must_any": ["type i pneumocyte",

@@ -7,13 +7,16 @@
 # ───────────────────────────────────────────────────────────────────────────
 
 # ── Bulk public data (3 TB+; recreated by following data/README.md) ─────────
-# Tissue folders themselves stay tracked (so SOURCES.yaml / README.md commit);
-# only the sample-level subdirs (which hold the actual bytes) are ignored.
-data/xenium/*/*/
-# Census mirrors are date-stamped subfolders right under data/census/:
-data/census/*/
-# ...but keep top-level data/census/README.md (tracked by default since
-# only subdirs are ignored above):
+# Policy: ignore ALL data payloads by default; allowlist only the lightweight
+# metadata manifests. This inverts the risk so new bulk files (tarballs, .h5,
+# .zarr, sample subdirs, census mirrors, …) are ignored automatically and can
+# never be accidentally committed. To track a new kind of small metadata file
+# under data/, add a matching "!" negation below.
+data/**
+!data/**/
+!data/README.md
+!data/**/README.md
+!data/**/SOURCES.yaml
 
 # ── Derived training artifacts (rebuilt by the pipeline) ────────────────────
 cellvit-training/trainingset/*/train/

@@ -50,7 +50,7 @@ KURTORANK_ROOT = SCRIPT_DIR.parent
 MODEL_DEV_ROOT = KURTORANK_ROOT.parent
 DEFAULT_XENIUM_ROOT = MODEL_DEV_ROOT / "data" / "xenium"
 DEFAULT_MARKERS_CSV = (
-    KURTORANK_ROOT / "src" / "kurtorank" / "markers" / "data" / "markers-v3.csv"
+    KURTORANK_ROOT / "src" / "kurtorank" / "markers" / "data" / "markers-v4_1.csv"
 )
 
 

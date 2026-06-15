@@ -8,7 +8,7 @@ KurtoRank v3 annotate pipeline. Ported from kurtorank3.ipynb, derived from
 kurtorank2-cli.py.
 
 v3 changes relative to v2:
-  - Consumes markers-v3.csv (atlas-reranked by rank_markers.py). Tolerates
+  - Consumes markers-v4_1.csv (atlas-reranked by rank_markers.py). Tolerates
     the extra `rank_source` and `low_support` columns; malignant filtering
     uses the `malignant` column rather than v2's `normal`.
   - Optional `--use-top-k-markers K` truncation: keep only the K most
@@ -50,13 +50,13 @@ import click
 
 
 def _default_markers_csv() -> Path:
-    """Path to the markers-v3_2.csv bundled with this package."""
+    """Path to the markers-v4_1.csv bundled with this package."""
     try:
         from importlib.resources import files as _resource_files
-        return Path(str(_resource_files("kurtorank.markers") / "data" / "markers-v3_2.csv"))
+        return Path(str(_resource_files("kurtorank.markers") / "data" / "markers-v4_1.csv"))
     except Exception:
         # Fallback for editable installs / older Python.
-        return Path(__file__).resolve().parent.parent / "markers" / "data" / "markers-v3_2.csv"
+        return Path(__file__).resolve().parent.parent / "markers" / "data" / "markers-v4_1.csv"
 
 
 import matplotlib
@@ -1158,7 +1158,7 @@ def run_kurtorank(
 
     all_markers = all_markers_df.set_index("subtype")["markers"].apply(lambda x: x.split(",")).to_dict()
     # v3: optionally truncate each subtype's marker list to top-K genes.
-    # markers-v3.csv stores genes in atlas-derived specificity order, so
+    # markers-v4_1.csv stores genes in atlas-derived specificity order, so
     # the first K are the most discriminative per Census scoring.
     if use_top_k_markers is not None and use_top_k_markers > 0:
         k = int(use_top_k_markers)
@@ -2385,8 +2385,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     "--markers-csv",
     type=click.Path(exists=True, dir_okay=False, file_okay=True, path_type=Path),
     default=lambda: _default_markers_csv(),
-    show_default="bundled markers-v3_2.csv",
-    help="Marker gene CSV file. Defaults to the markers-v3_2.csv shipped with "
+    show_default="bundled markers-v4_1.csv",
+    help="Marker gene CSV file. Defaults to the markers-v4_1.csv shipped with "
          "this package; pass a path to override.",
 )
 @click.option(
@@ -2537,7 +2537,7 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     default=None,
     show_default=True,
     help="Truncate each subtype's marker list to the top-K most specific "
-         "genes (order in markers-v3.csv). Requires an atlas-reranked CSV "
+         "genes (order in markers-v4_1.csv). Requires an atlas-reranked CSV "
          "produced by rank_markers.py. Leave unset to use the full list.",
 )
 def main(

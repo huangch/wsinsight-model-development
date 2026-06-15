@@ -1,7 +1,7 @@
 """
 rank_markers.py
 ---------------
-Rerank marker-gene lists in markers-v3.csv by atlas-derived specificity
+Rerank marker-gene lists in markers-v4_1.csv by atlas-derived specificity
 scores using the CELLxGENE Census (human reference).
 
 Policy (from chat discussion):
@@ -15,9 +15,9 @@ Policy (from chat discussion):
     `rank_source = "v3_curated"` (keep original order, trimmed to ceiling).
 
 Outputs:
-  - markers-v3.csv         : overwritten with reordered `markers` column plus
+  - markers-v4_1.csv       : overwritten with reordered `markers` column plus
                              two new columns: `rank_source`, `low_support`.
-  - markers-v3_qc.csv      : one row per (subtype, gene) with component scores
+  - markers-v4_1_qc.csv    : one row per (subtype, gene) with component scores
                              and assigned rank, to audit later.
 
 Usage:
@@ -1149,7 +1149,7 @@ def _run_rerank(args) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def rerank_markers(
     *,
-    input_csv: str | Path = "markers-v3.csv",
+    input_csv: str | Path = "markers-v4_1.csv",
     output_csv: str | Path | None = None,
     qc_output: str | Path | None = None,
     tissue: str | None = None,
@@ -1172,7 +1172,7 @@ def rerank_markers(
 
     Parameters
     ----------
-    input_csv : path to markers CSV (schema matching ``markers-v3.csv``).
+    input_csv : path to markers CSV (schema matching ``markers-v4_1.csv``).
     output_csv : if set, write the reranked CSV here.
     qc_output : if set, write the per-gene QC CSV here.
     tissue : limit processing to this single ``tissue_type``.
@@ -1225,10 +1225,10 @@ def rerank_markers(
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", default="markers-v3.csv")
-    ap.add_argument("--output", default="markers-v3.csv",
+    ap.add_argument("--input", default="markers-v4_1.csv")
+    ap.add_argument("--output", default="markers-v4_1.csv",
                     help="Where to write the reranked CSV (in-place by default).")
-    ap.add_argument("--qc-output", default="markers-v3_qc.csv")
+    ap.add_argument("--qc-output", default="markers-v4_1_qc.csv")
     ap.add_argument("--tissue", default=None,
                     help="Limit to one tissue_type (debug).")
     ap.add_argument("--tissues", default=None,

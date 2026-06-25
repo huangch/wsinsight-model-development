@@ -132,3 +132,9 @@ sandbox/
 **/sandbox/
 *.scratch.*
 Untitled*.ipynb
+
+# ── Notebook tracking policy ───────────────────────────────────────────────
+# Track notebooks by default, except archived content under any bak folder.
+!**/*.ipynb
+**/bak/
+**/bak/**

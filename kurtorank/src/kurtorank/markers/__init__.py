@@ -4,5 +4,5 @@ from pathlib import Path
 
 
 def default_markers_csv() -> Path:
-    """Return the path to the default markers-v4_1.csv shipped with kurtorank."""
-    return Path(str(files(__name__) / "data" / "markers-v4_1.csv"))
+    """Return the path to the default markers-v5.csv shipped with kurtorank."""
+    return Path(str(files(__name__) / "data" / "markers-v5.csv"))

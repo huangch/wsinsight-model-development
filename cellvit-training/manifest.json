@@ -1,0 +1,48 @@
+{
+  "config": {
+    "input": "/workspace/wsinsight/wsinsight-model-development/data/xenium",
+    "tissue": "breast,lung",
+    "output": "/workspace/wsinsight/wsinsight-model-development/cellvit-training",
+    "segmenter": "cellpose",
+    "cellpose_model": "cpsam",
+    "diameter": null,
+    "transform": "none",
+    "tile_px": 1024,
+    "mpp": 0.25,
+    "min_cells": 5,
+    "bg_thresh": 240.0,
+    "overlap": 0.0,
+    "val_frac": 0.1,
+    "by_slide": true,
+    "seed": 42,
+    "weight_cap": 10.0,
+    "backbone": "SAM-H-x40",
+    "fold": "fold_0",
+    "task": "pantissue",
+    "gpus": "auto",
+    "tune": 0,
+    "markers_csv": null,
+    "top_k_markers": 25
+  },
+  "stages": {
+    "annotate": {
+      "status": "done",
+      "ts": 1782692013.0559585,
+      "n_samples": 12,
+      "assignments": [
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv",
+        "celltype_assignment_pantissue_label.csv"
+      ]
+    }
+  }
+}

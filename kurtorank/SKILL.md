@@ -27,7 +27,7 @@ shared codebase:
    in `src/kurtorank/seed/main.py` + `src/kurtorank/seed/disco.py`, also
    importable as `kurtorank.build_panel`.
 
-The bundled panel is `src/kurtorank/markers/data/markers-v4_1.csv`, exposed
+The bundled panel is `src/kurtorank/markers/data/markers-v5.csv`, exposed
 via `kurtorank.markers.default_markers_csv()` and used as the default for
 `kurtorank annotate --markers-csv`.
 

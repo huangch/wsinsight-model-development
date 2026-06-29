@@ -1,0 +1,15 @@
+name: wsitrain
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+dependencies:
+  - python=3.11
+  - pip
+  - pytorch
+  - pytorch-cuda=12.1
+  - pip:
+      - cellpose
+      - kurtorank
+      - -e .
+      - .[stardist]

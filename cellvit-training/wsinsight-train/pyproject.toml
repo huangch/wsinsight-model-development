@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wsinsight-train"
+version = "0.1.0"
+description = "End-to-end, headless CLI to train WSInsight CellViT cell-classification heads from paired Xenium + H&E."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+dependencies = [
+  "numpy",
+  "pandas",
+  "pyyaml",
+  "scipy",
+  "tifffile",
+  "pillow",
+  "tqdm",
+  "kurtorank",
+  "cellpose",
+]
+
+[project.optional-dependencies]
+stardist = ["stardist", "tensorflow"]
+dev = ["pytest"]
+
+[project.scripts]
+wsitrain = "wsitrain.cli:main"
+
+[tool.setuptools]
+packages = ["wsitrain", "wsitrain.stages"]
+
+[tool.setuptools.package-data]
+wsitrain = ["defaults/*.yaml"]

@@ -1,9 +1,0 @@
-0: "lymphoid"
-1: "epithelial"
-2: "tumor"
-3: "myeloid"            # includes granulocytes (neutrophils, eosinophils, basophils)
-4: "endothelial"
-5: "neural"
-6: "plasma"
-7: "fibroblast"         # includes other stromal/mesenchymal
-8: "mast"

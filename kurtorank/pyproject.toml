@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kurtorank"
-version = "3.0.0"
+version = "3.1.0"
 description = "KurtoRank v3 — unsupervised ensemble subtype annotation for gene-limited spatial transcriptomics"
 readme = "README.md"
 license = { file = "LICENSE" }

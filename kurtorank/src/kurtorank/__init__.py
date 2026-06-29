@@ -1,5 +1,5 @@
 """kurtorank — pan-tissue ensemble subtype annotation for gene-limited spatial transcriptomics."""
-__version__ = "3.0.0"
+__version__ = "3.1.0"
 
 
 def rerank_markers(*args, **kwargs):

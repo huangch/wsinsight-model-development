@@ -689,6 +689,12 @@ def _process_cluster_worker(cluster_id):
     all_hne_labels = ctx["all_hne_labels"]
     all_pantissue_labels = ctx["all_pantissue_labels"]
     all_pantissue_types = ctx["all_pantissue_types"]
+    all_sthelar_full_types = ctx["all_sthelar_full_types"]
+    all_sthelar_full_labels = ctx["all_sthelar_full_labels"]
+    all_sthelar_coarse_types = ctx["all_sthelar_coarse_types"]
+    all_sthelar_coarse_labels = ctx["all_sthelar_coarse_labels"]
+    all_sthelar_cancer_normal_types = ctx["all_sthelar_cancer_normal_types"]
+    all_sthelar_cancer_normal_labels = ctx["all_sthelar_cancer_normal_labels"]
     all_malignant_indicators = ctx["all_malignant_indicators"]
     tie_break_priority = ctx["tie_break_priority"]
     var_names_all = ctx["var_names_all"]
@@ -1108,6 +1114,12 @@ def _process_cluster_worker(cluster_id):
     result_df["assigned_cell_hne_label"] = all_hne_labels[chosen]
     result_df["assigned_cell_pantissue_type"] = all_pantissue_types[chosen]
     result_df["assigned_cell_pantissue_label"] = all_pantissue_labels[chosen]
+    result_df["assigned_cell_sthelar_full_type"] = all_sthelar_full_types[chosen]
+    result_df["assigned_cell_sthelar_full_label"] = all_sthelar_full_labels[chosen]
+    result_df["assigned_cell_sthelar_coarse_type"] = all_sthelar_coarse_types[chosen]
+    result_df["assigned_cell_sthelar_coarse_label"] = all_sthelar_coarse_labels[chosen]
+    result_df["assigned_cell_sthelar_cancer_normal_type"] = all_sthelar_cancer_normal_types[chosen]
+    result_df["assigned_cell_sthelar_cancer_normal_label"] = all_sthelar_cancer_normal_labels[chosen]
     result_df["other_tied_cell_subtypes"] = "/".join([ct for ct in tied if ct != chosen])
     result_df["cancer_associated"] = all_malignant_indicators[chosen]
 
@@ -1181,6 +1193,20 @@ def run_kurtorank(
         all_pantissue_types = all_markers_df.set_index("subtype")["pantissue_type"].to_dict()
     else:
         all_pantissue_types = dict(all_hne_types)
+    # v5: sthelar_{full,coarse,cancer_normal}_{type,label} columns are optional.
+    # If absent (older marker CSVs) fall back to pantissue_{type,label} so
+    # downstream code paths still work.
+    def _opt_col(col: str, fallback: dict) -> dict:
+        if col in all_markers_df.columns:
+            return all_markers_df.set_index("subtype")[col].to_dict()
+        return dict(fallback)
+
+    all_sthelar_full_types = _opt_col("sthelar_full_type", all_pantissue_types)
+    all_sthelar_full_labels = _opt_col("sthelar_full_label", all_pantissue_labels)
+    all_sthelar_coarse_types = _opt_col("sthelar_coarse_type", all_pantissue_types)
+    all_sthelar_coarse_labels = _opt_col("sthelar_coarse_label", all_pantissue_labels)
+    all_sthelar_cancer_normal_types = _opt_col("sthelar_cancer_normal_type", all_pantissue_types)
+    all_sthelar_cancer_normal_labels = _opt_col("sthelar_cancer_normal_label", all_pantissue_labels)
     all_malignant_indicators = all_markers_df.set_index("subtype")["malignant"].astype(bool).to_dict()
 
     marker_genes = list({g for m in all_markers.values() for g in m})
@@ -1382,6 +1408,12 @@ def run_kurtorank(
         "all_hne_labels": all_hne_labels,
         "all_pantissue_labels": all_pantissue_labels,
         "all_pantissue_types": all_pantissue_types,
+        "all_sthelar_full_types": all_sthelar_full_types,
+        "all_sthelar_full_labels": all_sthelar_full_labels,
+        "all_sthelar_coarse_types": all_sthelar_coarse_types,
+        "all_sthelar_coarse_labels": all_sthelar_coarse_labels,
+        "all_sthelar_cancer_normal_types": all_sthelar_cancer_normal_types,
+        "all_sthelar_cancer_normal_labels": all_sthelar_cancer_normal_labels,
         "all_malignant_indicators": all_malignant_indicators,
         "tie_break_priority": tie_break_priority,
         "var_names_all": var_names_all,

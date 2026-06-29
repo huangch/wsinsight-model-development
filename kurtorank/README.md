@@ -26,10 +26,10 @@ kurtorank/
     ├── rank/main.py       # Census reranker
     └── markers/
         ├── __init__.py    # default_markers_csv()
-        └── data/markers-v4_1.csv
+        └── data/markers-v5.csv
 ```
 
-The curated panel (`markers-v4_1.csv`) is bundled as package data, so the
+The curated panel (`markers-v5.csv`) is bundled as package data, so the
 annotate CLI has a sensible default and no extra files need to travel with
 the install.
 
@@ -96,7 +96,7 @@ kurtorank annotate \
 | --- | --- |
 | `--xenium-dir` | Path to Xenium `outs/` directory. **Required**. |
 | `--tissue-type` | `bladder, bone, brain, breast, cervix, circulating, colorectal, heart, immune, kidney, liver, lung, lymph_node, ovary, pancreas, prostate, skin, tonsil`. **Required**. |
-| `--markers-csv` | Panel CSV. Defaults to the bundled `markers-v4_1.csv`; pass a path to override. |
+| `--markers-csv` | Panel CSV. Defaults to the bundled `markers-v5.csv`; pass a path to override. |
 | `--output-dir` | Where to write `annotated.h5ad`, plots, CSVs (defaults to `--xenium-dir`). |
 | `--common-only / --no-common-only` | Keep only `common==True` rows. |
 | `--normal-only / --include-cancer` | Exclude / include malignant subtypes. |
@@ -134,7 +134,7 @@ Full list: `kurtorank annotate --help`.
 
 Needed only when (a) adding/removing subtypes, (b) refreshing against a
 newer Census release, or (c) customizing the panel to a different tissue
-mix. The bundled `markers-v4_1.csv` ships a curated + already-reranked panel
+mix. The bundled `markers-v5.csv` ships a curated + already-reranked panel
 for 18 tissues.
 
 ### CLI

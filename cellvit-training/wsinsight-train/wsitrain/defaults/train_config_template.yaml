@@ -1,0 +1,44 @@
+logging:
+  mode: offline
+  project: cellvit-${TISSUE}
+  notes: ${TISSUE}-${TASK}-${NUM_CLASSES}class-${BACKBONE}
+  log_comment: ${TISSUE}-${TASK}-${BACKBONE_LC}
+  wandb_dir: ${CELLVIT_LOGS}
+  log_dir: ${CELLVIT_LOGS}
+  level: Debug
+random_seed: ${SEED}
+gpu: 0
+data:
+  dataset: DetectionDataset
+  dataset_path: ${TISSUE_ROOT}
+  normalize_stains_train: false
+  normalize_stains_val: false
+  num_classes: ${NUM_CLASSES}
+  train_filelist: ${TISSUE_ROOT}/splits/${FOLD}/train.csv
+  val_filelist: ${TISSUE_ROOT}/splits/${FOLD}/val.csv
+  label_map:
+${LABEL_MAP}
+cellvit_path: ${CELLVIT_WEIGHTS}
+model:
+  hidden_dim: 256
+training:
+  cache_cell_dataset: true
+  batch_size: 64
+  epochs: 50
+  drop_rate: ${DROP_RATE}
+  optimizer: AdamW
+  optimizer_hyperparameter:
+    betas: [0.85, 0.9]
+    lr: ${LR}
+    weight_decay: 2.0e-05
+  early_stopping_patience: 20
+  mixed_precision: true
+  eval_every: 1
+  weighted_sampling: true
+  weight_list: ${WEIGHTS}
+  scheduler:
+    scheduler_type: exponential
+    gamma: 0.95
+run_sweep: false
+agent: null
+just_load_model: false

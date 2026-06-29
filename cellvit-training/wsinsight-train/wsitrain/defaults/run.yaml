@@ -1,0 +1,33 @@
+# Default run configuration for wsinsight-train.
+# Users override any of these via --config my.yaml or individual CLI flags.
+# `input`, `tissue` and `output` are always supplied on the command line.
+
+# segmentation
+segmenter: cellpose          # cellpose | stardist
+cellpose_model: cpsam
+diameter: null               # null => auto
+transform: affine+bspline    # affine | affine+bspline | none
+
+# tiling (matches the established CellViT tile contract)
+tile_px: 1024
+mpp: 0.25
+min_cells: 5
+bg_thresh: 240.0
+overlap: 0.0
+
+# splits / weights
+val_frac: 0.10
+by_slide: true
+seed: 42
+weight_cap: 10.0
+
+# training
+backbone: SAM-H-x40
+fold: fold_0
+task: pantissue
+gpus: auto
+tune: 0                      # 0 = single run; N = auto-tune iterations
+
+# markers
+markers_csv: null            # null => kurtorank bundled default
+top_k_markers: 25

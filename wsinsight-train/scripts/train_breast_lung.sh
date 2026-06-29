@@ -8,18 +8,23 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/.." && pwd)"                       # cellvit-training/
+ROOT="$(cd "$HERE/../.." && pwd)"                     # wsinsight-model-development/
+CVT="$ROOT/cellvit-training"
 ENVBIN="${ENVBIN:-/opt/anaconda3/envs/wsinsight/bin}"
 export PATH="$ENVBIN:$PATH"
-export CELLVIT_ROOT="${CELLVIT_ROOT:-$ROOT/cellvit/CellViT-plus-plus}"
+export CELLVIT_ROOT="${CELLVIT_ROOT:-$CVT/cellvit/CellViT-plus-plus}"
+export TMPDIR="${TMPDIR:-/tmp}"
+export CELLPOSE_LOCAL_MODELS_PATH="${CELLPOSE_LOCAL_MODELS_PATH:-/workspace/.cellpose}"
+export TORCH_HOME="${TORCH_HOME:-/workspace/.torch}"
+mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 
 INPUT="${1:-$ROOT/data/xenium}"
 TISSUE="${2:-breast,lung}"
 TASK="${TASK:-sthelar_full}"                          # markers-v5 STHELAR label space
-OUT="$ROOT"                                           # head lands in $ROOT/models/<tissue>/
+OUT="$ROOT/models"                                   # all run outputs under models/
 
-echo "== preflight =="
-wsitrain check --input "$INPUT" --tissue "$TISSUE"
+echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
+wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
 echo "== full cycle ($TISSUE) =="
 wsitrain run \
@@ -31,4 +36,4 @@ wsitrain run \
   --output "$OUT" \
   --from annotate --to export
 
-echo "Done. Head + report under: $ROOT/models/$TISSUE/  +  $ROOT/report/$TISSUE/"
+echo "Done. Head + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"

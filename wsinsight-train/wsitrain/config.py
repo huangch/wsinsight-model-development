@@ -47,7 +47,7 @@ class RunConfig:
     # training
     backbone: str = "SAM-H-x40"
     fold: str = "fold_0"
-    task: str = "pantissue"
+    task: str = "sthelar_full"
     gpus: str = "auto"
     tune: int = 0                        # 0 = single run; N = auto-tune iterations
 

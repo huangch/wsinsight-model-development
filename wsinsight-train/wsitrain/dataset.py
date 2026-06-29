@@ -61,7 +61,9 @@ def discover_samples(input_dir: Path, tissue: str = "pantissue") -> list[Sample]
         if wanted is not None and tis not in wanted:
             continue
         sid = rel.replace("/", "__")
-        samples.append(Sample(sid, tis, outs, he, "unaligned" not in he.name))
+        has_reg = (outs / "direct_transf.txt").exists() and (outs / "registration_params.json").exists()
+        aligned = has_reg or "unaligned" not in he.name
+        samples.append(Sample(sid, tis, outs, he, aligned))
     return samples
 
 

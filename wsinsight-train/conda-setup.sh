@@ -12,7 +12,7 @@
 # kurtorank is installed editable from the sibling repo (not on PyPI).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../../kurtorank" && pwd 2>/dev/null || true)"
+KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd 2>/dev/null || true)"
 
 ENV_NAME="${CONDA_DEFAULT_ENV:-}"
 DO_RESET=0

@@ -55,7 +55,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     mask_dir.mkdir(parents=True, exist_ok=True)
     counts = {}
     from tqdm import tqdm
-    for s in tqdm(samples, desc="segment", unit="slide"):
+    for s in tqdm(samples, desc="segment", unit="slide", ascii=" =", dynamic_ncols=True):
         dst = mask_dir / f"{s.sample_id}.npy"
         if dst.exists():
             counts[s.sample_id] = int(np.load(dst).max())
@@ -94,8 +94,8 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
 
     def _to_px(s, df, mask):
         from ..bunwarp import map_cells
-        params = Path(s.outs).parent / "registration_params.json"
-        elastic = Path(s.outs).parent / "direct_transf.txt"
+        params = Path(s.outs) / "registration_params.json"
+        elastic = Path(s.outs) / "direct_transf.txt"
         if cfg.transform == "none" or not params.exists():
             xpx = (df["x_um"] / cfg.mpp).to_numpy()
             ypx = (df["y_um"] / cfg.mpp).to_numpy()
@@ -110,7 +110,7 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     # Pass 1: label vocabulary across samples.
     from tqdm import tqdm
     frames, labels = {}, set()
-    for s in tqdm(samples, desc="transfer:read", unit="slide"):
+    for s in tqdm(samples, desc="transfer:read", unit="slide", ascii=" =", dynamic_ncols=True):
         df = _per_cell(s)
         frames[s.sample_id] = df
         labels.update(df["label"].unique())
@@ -121,7 +121,7 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         "\n".join(f'{i}: "{n}"' for i, n in label_map.items()) + "\n")
 
     counts = {}
-    for s in tqdm(samples, desc="transfer:join", unit="slide"):
+    for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
         df = frames[s.sample_id]
         mask = np.load(mask_dir / f"{s.sample_id}.npy")
         xpx, ypx = _to_px(s, df, mask)
@@ -155,7 +155,7 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     stride = int(cfg.tile_px * (1 - cfg.overlap))
     written = 0
     from tqdm import tqdm
-    for s in tqdm(samples, desc="tile", unit="slide"):
+    for s in tqdm(samples, desc="tile", unit="slide", ascii=" =", dynamic_ncols=True):
         he = tifffile.imread(str(s.he))
         cells = pd.read_csv(nuc_dir / f"{s.sample_id}.csv")
         h, w = he.shape[:2]

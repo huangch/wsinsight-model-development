@@ -4,21 +4,28 @@
 # Requires the `wsitrain` env (torch + cellpose + kurtorank) and $CELLVIT_ROOT.
 set -euo pipefail
 
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$HERE/../.." && pwd)"                     # wsinsight-model-development/
 INPUT="${1:?input dir}"
 TISSUE="${2:-breast}"
-OUT="${3:-$INPUT/wsinsight_train_out}"
+OUT="${3:-$ROOT/models/$TISSUE}"
+TASK="${TASK:-sthelar_full}"
 
-: "${CELLVIT_ROOT:?set CELLVIT_ROOT to the CellViT-plus-plus checkout}"
+export CELLVIT_ROOT="${CELLVIT_ROOT:?set CELLVIT_ROOT to the CellViT-plus-plus checkout}"
+export TMPDIR="${TMPDIR:-/tmp}"
+export CELLPOSE_LOCAL_MODELS_PATH="${CELLPOSE_LOCAL_MODELS_PATH:-/workspace/.cellpose}"
+export TORCH_HOME="${TORCH_HOME:-/workspace/.torch}"
+mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 
-echo "== preflight =="
-wsitrain check --input "$INPUT" --tissue "$TISSUE"
+echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
+wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
 echo "== cellpose run =="
-wsitrain run --input "$INPUT" --tissue "$TISSUE" --segmenter cellpose \
+wsitrain run --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter cellpose \
   --output "$OUT/cellpose" --to tile
 
 echo "== stardist run (parity) =="
-wsitrain run --input "$INPUT" --tissue "$TISSUE" --segmenter stardist \
+wsitrain run --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
   --output "$OUT/stardist" --to tile
 
 echo "== compare tile/label counts =="

@@ -24,7 +24,7 @@ weight_cap: 10.0
 # training
 backbone: SAM-H-x40
 fold: fold_0
-task: pantissue
+task: sthelar_full
 gpus: auto
 tune: 0                      # 0 = single run; N = auto-tune iterations
 

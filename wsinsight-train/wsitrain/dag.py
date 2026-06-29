@@ -27,6 +27,13 @@ def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
     resolved_config_path(cfg.output).write_text(yaml.safe_dump(cfg.to_dict()))
     mf = Manifest.load_or_new(manifest_path(cfg.output), cfg.to_dict())
     samples = discover_samples(cfg.input, cfg.tissue)
+    if cfg.transform != "none":
+        kept = [s for s in samples if s.aligned]
+        dropped = len(samples) - len(kept)
+        if dropped:
+            print(f"[run] skipping {dropped} unaligned sample(s) (transform={cfg.transform}); "
+                  f"register them or use --transform none")
+        samples = kept
     todo = [s for s in step_range(from_step, to_step) if s not in skip]
     print(f"[run] tissue={cfg.tissue} samples={len(samples)} steps={todo}")
 

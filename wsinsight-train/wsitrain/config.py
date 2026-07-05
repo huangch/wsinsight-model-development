@@ -27,6 +27,8 @@ class RunConfig:
     segmenter: str = "cellpose"          # cellpose | stardist
     cellpose_model: str = "cpsam"
     diameter: float | None = None
+    cellpose_batch_size: int = 8         # tile batch; lower if GPU OOMs
+    cellpose_flow_threshold: float = 0.0 # 0 = skip GPU flow QC (avoids WSI OOM)
 
     # registration transform
     transform: str = "affine+bspline"    # affine | affine+bspline | none
@@ -39,8 +41,8 @@ class RunConfig:
     overlap: float = 0.0
 
     # splits / weights
-    val_frac: float = 0.10
-    by_slide: bool = True
+    val_frac: float = 0.20
+    by_slide: bool = False               # tile-based (stratified per slide) split
     seed: int = 42
     weight_cap: float = 10.0
 

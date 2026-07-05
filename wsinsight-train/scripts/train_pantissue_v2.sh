@@ -20,17 +20,16 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 
 INPUT="${1:-$ROOT/data/xenium}"
-TISSUE="${2:-breast,lung}"
 TASK="${TASK:-pannuke}"                                 # PanNuke label space (transfer appends _label.csv)
 OUT="$ROOT/models"                                   # all run outputs under models/
 
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
-wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
+wsitrain check --input "$INPUT" --tissue "pantissue" || true
 
-echo "== full cycle ($TISSUE) =="
+echo "== full cycle (pantissue) =="
 wsitrain run \
   --input "$INPUT" \
-  --tissue "$TISSUE" \
+  --tissue "pantissue" \
   --task "$TASK" \
   --segmenter cellpose \
   --cellpose-batch-size "${CP_BATCH:-4}" \
@@ -40,4 +39,4 @@ wsitrain run \
   --from annotate --to export \
   --tune 6
 
-echo "Done. Head + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"
+echo "Done. Head + report under: $OUT/models/pantissue/  +  $OUT/report/pantissue/"

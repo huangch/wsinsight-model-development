@@ -1,7 +1,13 @@
-"""Train / val tile splitting (slide-aware). Ported from pipeline.old/splits.py.
+"""Train / val tile splitting. Ported from pipeline.old/splits.py.
 
-Two modes: per-tile shuffle, or slide-level holdout (whole SAMPLE_TAG to one
-side). Single-slide tissues fall back to per-tile.
+Two modes:
+  * per-tile (default): hold out ``val_frac`` of tiles from EACH slide, so
+    every slide/tissue appears in both train and val. Robust to an
+    imbalanced slide mix (e.g. 9 breast + 1 lung) that would otherwise send a
+    whole tissue into val under slide-level holdout.
+  * slide-level (``by_slide=True``): hold whole slides (SAMPLE_TAG) out to one
+    side. Use only when leakage between train/val tiles of the same slide must
+    be avoided AND the slide/tissue mix is balanced.
 """
 from __future__ import annotations
 
@@ -53,12 +59,25 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
             mode="slide-level", n_slides=len(slide_names),
             train_slides=sorted(train_g), val_slides=sorted(val_g))
 
-    shuffled = list(tiles)
-    rng.shuffle(shuffled)
-    n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
-    return SplitResult(train=shuffled[n_val:], val=shuffled[:n_val],
-                       mode="per-tile", n_slides=len(slide_names),
-                       train_slides=[], val_slides=[])
+    # Per-tile split, stratified by slide: hold out val_frac of tiles from
+    # EACH slide. Every slide (and therefore every tissue) is represented in
+    # both train and val, so an imbalanced slide mix (e.g. 9 breast + 1 lung)
+    # can never push a whole tissue entirely into the validation set.
+    train: list[str] = []
+    val: list[str] = []
+    for g in slide_names:
+        group = list(slides[g])
+        rng.shuffle(group)
+        if len(group) >= 2:
+            n_val = max(1, min(int(round(len(group) * val_frac)), len(group) - 1))
+        else:
+            n_val = 0
+        val.extend(group[:n_val])
+        train.extend(group[n_val:])
+    return SplitResult(train=sorted(train), val=sorted(val),
+                       mode="per-tile-stratified", n_slides=len(slide_names),
+                       train_slides=sorted(slide_names),
+                       val_slides=sorted(slide_names))
 
 
 def write_split(res: SplitResult, out_dir: Path) -> None:

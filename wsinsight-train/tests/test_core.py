@@ -11,7 +11,7 @@ def test_split_per_tile(tmp_path):
     for i in range(10):
         (d / f"s1_tile_{i:05d}.csv").write_text("0,0,1\n")
     r = splits.split_tiles(d, val_frac=0.2, by_slide=False, seed=1)
-    assert len(r.train) + len(r.val) == 10 and r.mode == "per-tile"
+    assert len(r.train) + len(r.val) == 10 and r.mode == "per-tile-stratified"
 
 
 def test_split_by_slide(tmp_path):

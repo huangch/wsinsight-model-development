@@ -24,14 +24,21 @@ class Segmenter(Protocol):
 class CellposeSegmenter:
     name = "cellpose"
 
-    def __init__(self, model: str = "cpsam", diameter: float | None = None):
+    def __init__(self, model: str = "cpsam", diameter: float | None = None,
+                 batch_size: int = 8, flow_threshold: float = 0.0):
         self.model_name = model
         self.diameter = diameter
+        self.batch_size = batch_size
+        self.flow_threshold = flow_threshold
+        self._model = None  # lazy: instantiated once on first call, reused across slides
 
     def segment(self, he_rgb: np.ndarray, *, mpp: float) -> np.ndarray:
         from cellpose import models  # lazy
-        model = models.CellposeModel(gpu=True, model_type=self.model_name)
-        masks, *_ = model.eval(he_rgb, diameter=self.diameter, channels=[0, 0])
+        if self._model is None:
+            self._model = models.CellposeModel(gpu=True, model_type=self.model_name)
+        masks, *_ = self._model.eval(he_rgb, diameter=self.diameter, channels=[0, 0],
+                                     batch_size=self.batch_size,
+                                     flow_threshold=self.flow_threshold)
         return masks.astype("int32")
 
 
@@ -50,9 +57,10 @@ class StarDistSegmenter:
 
 
 def get_segmenter(name: str, *, cellpose_model: str = "cpsam",
-                  diameter: float | None = None) -> Segmenter:
+                  diameter: float | None = None, batch_size: int = 8,
+                  flow_threshold: float = 0.0) -> Segmenter:
     if name == "cellpose":
-        return CellposeSegmenter(cellpose_model, diameter)
+        return CellposeSegmenter(cellpose_model, diameter, batch_size, flow_threshold)
     if name == "stardist":
         return StarDistSegmenter()
     raise ValueError(f"unknown segmenter: {name!r} (cellpose | stardist)")

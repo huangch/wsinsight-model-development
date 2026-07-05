@@ -45,7 +45,9 @@ def _cmd_run(args) -> int:
                        user_config=args.config,
                        overrides={"segmenter": args.segmenter, "gpus": args.gpus,
                                   "transform": args.transform, "tune": args.tune,
-                                  "task": args.task})
+                                  "task": args.task,
+                                  "cellpose_batch_size": args.cellpose_batch_size,
+                                  "cellpose_flow_threshold": args.cellpose_flow_threshold})
     from . import dag
     return dag.run(cfg, from_step=args.from_step, to_step=args.to_step,
                    skip=args.skip, force=args.force)
@@ -67,6 +69,10 @@ def main(argv=None) -> int:
     r.add_argument("--output", default=None)
     r.add_argument("--config", default=None)
     r.add_argument("--segmenter", default=None, choices=["cellpose", "stardist"])
+    r.add_argument("--cellpose-batch-size", type=int, default=None,
+                   help="cellpose tile batch; lower (4/2/1) if GPU OOMs")
+    r.add_argument("--cellpose-flow-threshold", type=float, default=None,
+                   help="cellpose flow QC; 0 skips GPU flow check (avoids WSI OOM)")
     r.add_argument("--transform", default=None, choices=["affine", "affine+bspline", "none"])
     r.add_argument("--gpus", default=None)
     r.add_argument("--tune", type=int, default=None, help="auto-tune iterations (0=off)")

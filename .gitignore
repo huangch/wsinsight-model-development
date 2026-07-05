@@ -125,6 +125,9 @@ nohup.out
 core.*
 *.pid
 
+# ── wsinsight-train pipeline outputs (fully regenerable, never commit) ─────
+models/
+
 # ── Dev scratch (throwaway code/data; use these known-ignored locations) ────
 scratch/
 sandbox/

@@ -17,27 +17,36 @@ LEVERS = ("weight", "drop", "lr")
 
 
 def read_macro_f1(run_dir: Path) -> float | None:
-    js = sorted(run_dir.rglob("*classification_report*.json"))
-    if not js:
-        return None
-    d = json.loads(js[-1].read_text())
-    return d.get("macro avg", {}).get("f1-score")
+    # Trainer writes val_results/scores.json with key "F1-Score/Validation"
+    scores = run_dir / "val_results" / "scores.json"
+    if scores.exists():
+        d = json.loads(scores.read_text())
+        return d.get("F1-Score/Validation")
+    return None
 
 
 def weakest_class(run_dir: Path) -> int | None:
-    js = sorted(run_dir.rglob("*classification_report*.json"))
-    if not js:
+    # Trainer writes val_results/predictions.pt + gt.pt; derive per-class F1
+    # from those tensors rather than a classification_report JSON.
+    pred_pt = run_dir / "val_results" / "predictions.pt"
+    gt_pt   = run_dir / "val_results" / "gt.pt"
+    if not pred_pt.exists() or not gt_pt.exists():
         return None
-    d = json.loads(js[-1].read_text())
-    cls = {int(k): v["f1-score"] for k, v in d.items() if k.isdigit()}
-    if not cls:
+    try:
+        import torch
+        from sklearn.metrics import f1_score
+        preds = torch.load(pred_pt, map_location="cpu").numpy()
+        gts   = torch.load(gt_pt,   map_location="cpu").numpy()
+        classes = sorted(set(gts.tolist()))
+        per_class = f1_score(gts, preds, labels=classes, average=None, zero_division=0)
+        c = int(per_class.argmin())
+        return c if per_class[c] < WEAK_F1 else None
+    except Exception:
         return None
-    c = min(cls, key=cls.get)
-    return c if cls[c] < WEAK_F1 else None
 
 
 def apply_lever(lever, weights, drop, lr, weak):
-    if lever == "weight" and weak is not None:
+    if lever == "weight" and weak is not None and weights is not None:
         weights = list(weights); weights[weak] *= WEIGHT_BOOST
     elif lever == "drop":
         drop = round(min(drop + DROP_STEP, 0.5), 3)
@@ -50,19 +59,31 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     """Outer loop: retrain with one lever/iter, keep if macro-F1 improves."""
     import subprocess
     from pathlib import Path
-    from . import configrender, paths
+    from . import configrender, paths, weights as weights_mod
 
     logs = Path(cellvit) / "logs_local"
     rd = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
     best_f1 = read_macro_f1(rd[-1].parent.parent) if rd else None
-    drop, lr, weights = 0.1, 0.0003, None
+    # Seed with the default inverse-frequency weights so the "weight" lever has a
+    # real per-class vector to boost (was None -> list(None) TypeError on iter 1).
+    _rep = weights_mod.compute_weights(
+        paths.label_map_path(out, cfg.tissue),
+        paths.labels_dir(out, cfg.tissue), cap=cfg.weight_cap)
+    drop, lr, weights = 0.1, 0.000075, list(_rep.weights)
     li, rejects, log = 0, 0, []
     for it in range(cfg.tune):
         lever = LEVERS[li % len(LEVERS)]
         weak = weakest_class(rd[-1].parent.parent) if rd else None
         weights, drop, lr = apply_lever(lever, weights, drop, lr, weak)
         cp = configrender.render_config(cfg, out, drop_rate=drop, lr=lr, weights=weights)
-        subprocess.run([py, str(Path(cellvit) / "train.py"), "--config", str(cp)], cwd=cellvit, check=True)
+        import os as _os
+        _env = _os.environ.copy()
+        _env["PYTHONPATH"] = cellvit
+        subprocess.run(
+            [py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
+             "--config", str(cp)],
+            cwd=cellvit, env=_env, check=True,
+        )
         rd = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
         f1 = read_macro_f1(rd[-1].parent.parent)
         ok = best_f1 is None or (f1 and f1 - best_f1 >= MIN_IMPROVEMENT)

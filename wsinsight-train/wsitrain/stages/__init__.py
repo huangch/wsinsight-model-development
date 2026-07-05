@@ -50,7 +50,8 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     from ..segment import get_segmenter
 
     seg = get_segmenter(cfg.segmenter, cellpose_model=cfg.cellpose_model,
-                        diameter=cfg.diameter)
+                        diameter=cfg.diameter, batch_size=cfg.cellpose_batch_size,
+                        flow_threshold=cfg.cellpose_flow_threshold)
     mask_dir = out / "masks" / cfg.tissue
     mask_dir.mkdir(parents=True, exist_ok=True)
     counts = {}
@@ -64,6 +65,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
         mask = seg.segment(he, mpp=cfg.mpp)
         np.save(dst, mask)
         counts[s.sample_id] = int(mask.max())
+        del he, mask  # free large arrays before next slide
     return {"segmenter": seg.name, "nuclei_per_sample": counts}
 
 
@@ -122,13 +124,14 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
 
     counts = {}
     for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
-        df = frames[s.sample_id]
+        df = frames.pop(s.sample_id)  # release each frame as we go
         mask = np.load(mask_dir / f"{s.sample_id}.npy")
         xpx, ypx = _to_px(s, df, mask)
         df = df.assign(x_px=xpx, y_px=ypx, class_int=df["label"].map(name_to_int))
         df = df[mask[ypx, xpx] > 0]
         df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)
         counts[s.sample_id] = len(df)
+        del mask, df  # free mask + joined frame before next slide
     return {"n_classes": len(label_map), "cells_per_sample": counts}
 
 
@@ -173,6 +176,7 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
                 sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
                     lab_dir / f"{stem}.csv", header=False, index=False)
                 written += 1
+        del he  # free WSI array after all tiles for this slide
     return {"tiles": written}
 
 
@@ -205,8 +209,11 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     if not cfg_path.exists():
         raise RuntimeError(f"missing train config: {cfg_path}")
     py = shutil.which("python3") or "python"
-    subprocess.run([py, str(Path(cellvit) / "train.py"), "--config", str(cfg_path)],
-                   cwd=cellvit, check=True)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = cellvit  # CellViT++ requires its root on sys.path
+    subprocess.run([py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
+                    "--config", str(cfg_path)],
+                   cwd=cellvit, env=env, check=True)
     if cfg.tune and cfg.tune > 0:
         from ..tuning import run_tune
         return run_tune(cfg, out, cellvit, base_config=cfg_path, py=py)
@@ -214,9 +221,18 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
 
 
 def validate(cfg, samples, out: Path) -> dict[str, Any]:
-    """Pull CellViT++ val metrics (confusion + per-class report) into report/."""
+    """Read val_results produced by the trainer and generate a confusion-matrix PNG.
+
+    The trainer stores val_results/scores.json (scalar metrics) and
+    val_results/predictions.pt + val_results/gt.pt (raw tensors) whenever a new
+    best checkpoint is saved.  We surface those into the report directory and
+    build a confusion-matrix figure from the raw tensors.
+    """
+    import json
     import os
     import shutil
+
+    import numpy as np
 
     cellvit = os.environ.get("CELLVIT_ROOT")
     logs = Path(cellvit) / "logs_local" if cellvit else None
@@ -226,26 +242,65 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
     if not runs:
         raise RuntimeError("no trained run; train first")
     run_dir = runs[-1].parent.parent
-    rd = paths.report_dir(out, cfg.tissue); rd.mkdir(parents=True, exist_ok=True)
-    found = []
-    for pat in ("*confusion*.png", "*classification*report*.txt", "*report*.csv"):
-        for f in run_dir.rglob(pat):
-            shutil.copy2(f, rd / f.name); found.append(f.name)
-    return {"run_dir": str(run_dir), "metrics": found}
+    val_results_dir = run_dir / "val_results"
+
+    rd = paths.report_dir(out, cfg.tissue)
+    rd.mkdir(parents=True, exist_ok=True)
+
+    metrics = {}
+    # --- scores.json ---------------------------------------------------------
+    scores_src = val_results_dir / "scores.json"
+    if scores_src.exists():
+        shutil.copy2(scores_src, rd / "scores.json")
+        with open(scores_src) as f:
+            metrics = json.load(f)
+
+    # --- confusion matrix from stored tensors --------------------------------
+    import torch
+    pred_pt = val_results_dir / "predictions.pt"
+    gt_pt   = val_results_dir / "gt.pt"
+    if pred_pt.exists() and gt_pt.exists():
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+
+        from ..weights import load_label_map
+        label_map = load_label_map(paths.label_map_path(out, cfg.tissue))
+        class_names = [label_map[i] for i in sorted(label_map)]
+
+        preds = torch.load(pred_pt, map_location="cpu").numpy()
+        gts   = torch.load(gt_pt,   map_location="cpu").numpy()
+        cm    = confusion_matrix(gts, preds, labels=list(range(len(class_names))))
+        cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-9)
+
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        for ax, mat, title in zip(axes, [cm, cm_norm], ["Counts", "Normalised"]):
+            disp = ConfusionMatrixDisplay(confusion_matrix=mat, display_labels=class_names)
+            disp.plot(ax=ax, colorbar=False, xticks_rotation="vertical")
+            ax.set_title(title)
+        fig.tight_layout()
+        fig.savefig(rd / "confusion_matrix.png", dpi=150)
+        plt.close(fig)
+
+    return {"run_dir": str(run_dir), "metrics": metrics}
 
 
 def export(cfg, samples, out: Path) -> dict[str, Any]:
-    """Promote best checkpoint → wsinsight-ready model folder (torchscript_model.pt
-    + config.json) under models/<tissue>/main/, matching the zoo spec."""
+    """Convert best checkpoint to TorchScript via cellvit_convert_to_torchscript.py,
+    then assemble a wsinsight-ready model folder under models/<tissue>/main/."""
     import json
     import os
     import shutil
+    import subprocess
 
     from ..weights import load_label_map
 
     cellvit = os.environ.get("CELLVIT_ROOT")
-    logs = Path(cellvit) / "logs_local" if cellvit else None
-    if not logs or not logs.is_dir():
+    if not cellvit or not Path(cellvit).is_dir():
+        raise RuntimeError("set $CELLVIT_ROOT to the CellViT-plus-plus checkout")
+    logs = Path(cellvit) / "logs_local"
+    if not logs.is_dir():
         raise RuntimeError("no logs_local under $CELLVIT_ROOT; run train first")
     cands = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
     if not cands:
@@ -254,24 +309,28 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
     dst = paths.models_dir(out, cfg.tissue) / "main"
     dst.mkdir(parents=True, exist_ok=True)
 
+    ts_out = dst / "torchscript_model.pt"
+    py = shutil.which("python3") or "python"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = cellvit
+    subprocess.run(
+        [py,
+         str(Path(cellvit) / "cellvit" / "cellvit_convert_to_torchscript.py"),
+         "--checkpoint", str(best),
+         "--output",     str(ts_out),
+         "--height",     str(cfg.tile_px),
+         "--width",      str(cfg.tile_px)],
+        cwd=cellvit, env=env, check=True,
+    )
+
     label_map = load_label_map(paths.label_map_path(out, cfg.tissue))
-    class_names = ["background"] + [label_map[i] for i in sorted(label_map)]
-    # TorchScript export (best-effort; falls back to raw checkpoint copy).
-    ts = best.parent / "torchscript_model.pt"
-    if ts.exists():
-        shutil.copy2(ts, dst / "torchscript_model.pt")
-    else:
-        shutil.copy2(best, dst / "model_best.pth")
+    class_names = [label_map[i] for i in sorted(label_map)]
     config = {
         "spec_version": "1.0", "architecture": "cellvit",
         "num_classes": len(class_names), "class_names": class_names,
         "patch_size_pixels": cfg.tile_px, "halo_size_pixels": 0,
         "spacing_um_px": cfg.mpp,
-        "transform": [
-            {"name": "Resize", "arguments": {"size": cfg.tile_px}},
-            {"name": "ToTensor"},
-            {"name": "Normalize", "arguments": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
-        ],
+        "backbone": cfg.backbone,
         "stain_normalization": False, "object_based": True,
         "mixed_precision": False, "object_detection": {"name": "end2end"},
     }

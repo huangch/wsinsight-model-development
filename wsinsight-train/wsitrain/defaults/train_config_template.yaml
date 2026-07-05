@@ -16,6 +16,7 @@ data:
   num_classes: ${NUM_CLASSES}
   train_filelist: ${TISSUE_ROOT}/splits/${FOLD}/train.csv
   val_filelist: ${TISSUE_ROOT}/splits/${FOLD}/val.csv
+  hash_info: ${HASH_INFO}
   label_map:
 ${LABEL_MAP}
 cellvit_path: ${CELLVIT_WEIGHTS}
@@ -24,14 +25,14 @@ model:
 training:
   cache_cell_dataset: true
   batch_size: 64
-  epochs: 50
+  epochs: 10
   drop_rate: ${DROP_RATE}
   optimizer: AdamW
   optimizer_hyperparameter:
     betas: [0.85, 0.9]
     lr: ${LR}
-    weight_decay: 2.0e-05
-  early_stopping_patience: 20
+    weight_decay: 1.0e-03
+  early_stopping_patience: 5
   mixed_precision: true
   eval_every: 1
   weighted_sampling: true

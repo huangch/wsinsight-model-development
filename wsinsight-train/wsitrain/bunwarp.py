@@ -34,8 +34,16 @@ def load_params(path: Path) -> dict:
 def load_elastic(path: Path):
     """Read bUnwarpJ saveElasticTransformation: intervals + (I+3)x(I+3) cx,cy."""
     toks = Path(path).read_text().split()
-    intervals = int(toks[toks.index("Intervals=") + 1]) if "Intervals=" in toks else int(
-        next(t for t in toks if t.isdigit()))
+    intervals = None
+    if "Intervals=" in toks:                          # spaced: "Intervals= 8"
+        intervals = int(toks[toks.index("Intervals=") + 1])
+    else:
+        for t in toks:
+            if t.startswith("Intervals="):           # concatenated: "Intervals=8"
+                intervals = int(t.split("=", 1)[1])
+                break
+    if intervals is None:
+        raise ValueError(f"Cannot find Intervals value in {path}")
     nums = [float(t) for t in toks if _is_float(t)]
     n = (intervals + 3) ** 2
     cx = np.array(nums[:n]).reshape(intervals + 3, intervals + 3)

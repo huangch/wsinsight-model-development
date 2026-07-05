@@ -6,6 +6,8 @@
 segmenter: cellpose          # cellpose | stardist
 cellpose_model: cpsam
 diameter: null               # null => auto
+cellpose_batch_size: 8       # tile batch; lower (4/2) if GPU OOMs
+cellpose_flow_threshold: 0.0 # 0 = skip GPU flow QC (avoids whole-slide OOM)
 transform: affine+bspline    # affine | affine+bspline | none
 
 # tiling (matches the established CellViT tile contract)
@@ -16,8 +18,8 @@ bg_thresh: 240.0
 overlap: 0.0
 
 # splits / weights
-val_frac: 0.10
-by_slide: true
+val_frac: 0.20
+by_slide: false      # tile-based (stratified per slide) split; true = whole-slide holdout
 seed: 42
 weight_cap: 10.0
 

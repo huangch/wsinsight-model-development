@@ -3,7 +3,7 @@ description: KurtoRank installable package (pan-tissue Xenium annotation + Censu
 applyTo: "**/kurtorank/**"
 ---
 
-# SKILL: kurtorank (v3.0.0)
+# SKILL: kurtorank (v3.1.0)
 
 ## Purpose
 
@@ -46,7 +46,7 @@ Console script: `kurtorank`. Python import: `import kurtorank`.
 ## Invariants agents must preserve
 
 - **Distribution name is `kurtorank`**, **import name is `kurtorank`**,
-  version **3.0.0**. The "3" lives in the version, not the package name.
+  version **3.1.0**. The "3" lives in the version, not the package name.
 - Annotate, rank-markers, and build-panel are separate Click subcommands;
   **do not** fold them. They have distinct runtime profiles (annotate =
   GPU / scanpy; rank-markers = Census / tiledbsoma; build-panel = HTTP
@@ -54,11 +54,16 @@ Console script: `kurtorank`. Python import: `import kurtorank`.
 - `cellxgene-census` and `tiledbsoma` are **core** dependencies so that
   `kurtorank rank-markers` works out of the box. Do not move them into an
   optional extra — users were hitting `ModuleNotFoundError` at runtime.
-- `markers-v3.csv` is bundled via `[tool.setuptools.package-data]`. Keep
+- Keep KurtoRank **co-installable with wsinsight/sptxinsight**: preserve the
+  compatibility bounds (`numpy<2`, `zarr<3`, and capped spatial stack versions
+  for `squidpy`/`spatialdata`/`spatialdata-io`/`xarray`/`dask`/`distributed`).
+  Uncapped upgrades in these packages can silently pull `numpy>=2` and break
+  wsinsight environments.
+- `markers-v5.csv` is bundled via `[tool.setuptools.package-data]`. Keep
   `rank_source` and `low_support` columns — downstream consumers rely on
   their presence.
 - `build-panel` output is a **skeleton**, not a drop-in replacement for
-  `markers-v3.csv`. Do not auto-merge DISCO output into the bundled
+  `markers-v5.csv`. Do not auto-merge DISCO output into the bundled
   panel; that requires hand-curation of biology columns.
 - DISCO atlas identifier is the **slug** (e.g. `blood`, `adipose_cell`),
   not the display tissue label. One tissue can span multiple atlases
@@ -172,7 +177,7 @@ kurtorank annotate \
   --n-jobs 8
 ```
 
-Omit `--markers-csv` to use the bundled `markers-v3.csv`.
+Omit `--markers-csv` to use the bundled `markers-v5.csv`.
 
 `--use-top-k-markers K` is v3-specific: the CSV stores genes in
 atlas-specificity order, so top-K means "K most discriminative genes".
@@ -182,7 +187,7 @@ atlas-specificity order, so top-K means "K most discriminative genes".
 ```python
 from kurtorank import rerank_markers
 df_out, qc_df = rerank_markers(
-    input_csv="markers-v3.csv",
+  input_csv="markers-v5.csv",
     tissues=["breast", "colorectal"],
     census_uri="/path/to/census-soma",
     parallel=4,
@@ -231,17 +236,18 @@ df_out, qc_df = rerank_markers(
 
 ### `src/kurtorank/cli.py`
 
-- Root click group `cli()` with two subcommands:
+- Root click group `cli()` with three subcommands:
   - `annotate` = `kurtorank.annotate.main.annotate_cmd` (click-native).
   - `rank-markers` = passthrough; forwards `argv` to the argparse-based
     `rank_markers_main()`.
+  - `build-panel` = `kurtorank.seed.main.build_panel_cmd` (click-native).
 - `_main()` (the console-script entry point) sets BLAS thread caps and
   `mp.set_start_method("spawn", force=True)` before calling `cli()`.
 
 ## Frequently-needed patches
 
 - **Add a new tissue**: edit `TISSUE_MAP` in `src/kurtorank/rank/main.py`,
-  add rows with the new `tissue_type` to `markers-v3.csv` (columns:
+  add rows with the new `tissue_type` to `markers-v5.csv` (columns:
   `common`, `malignant`, `hne_type`, `hne_label`, `pannuke_label`,
   `major_type`, `markers`), optionally add `SUBTYPE_OVERRIDES`, then run
   `kurtorank rank-markers --tissues <new>`.
@@ -249,7 +255,7 @@ df_out, qc_df = rerank_markers(
   `method_switch` defaults, emit the FDR array in
   `_process_cluster_worker`, and append to `tie_break_priority`.
 - **Ship an updated panel**: overwrite
-  `src/kurtorank/markers/data/markers-v3.csv`. The editable install
+  `src/kurtorank/markers/data/markers-v5.csv`. The editable install
   picks it up automatically; wheels need a rebuild.
 
 ## Things that look like bugs but are not

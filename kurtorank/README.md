@@ -9,7 +9,7 @@ across-subtype score distribution — decisive (peaked) tests up-weighted,
 flat (uninformative) tests down-weighted. The weighted ensemble is
 rank-aggregated into a final subtype call per Leiden / graphclust cluster.
 
-This is the installable `kurtorank` Python package (v3.0.0).
+This is the installable `kurtorank` Python package (v3.1.0).
 
 ## Package layout
 
@@ -19,9 +19,9 @@ kurtorank/
 ├── README.md
 ├── SKILL.md
 └── src/kurtorank/
-    ├── __init__.py        # exports __version__ + rerank_markers
+    ├── __init__.py        # exports __version__ + rerank_markers + build_panel
     ├── __main__.py        # `python -m kurtorank`
-    ├── cli.py             # click group: annotate + rank-markers
+    ├── cli.py             # click group: annotate + rank-markers + build-panel
     ├── annotate/main.py   # annotate pipeline
     ├── rank/main.py       # Census reranker
     └── markers/
@@ -53,6 +53,21 @@ Core deps (pulled in automatically): `scanpy`, `squidpy`, `spatialdata`,
 `spatialdata-io`, `anndata`, `torch`, `scipy`, `statsmodels`, `pandas`,
 `numpy`, `click`, `tqdm`, `cellxgene-census`, `tiledbsoma`.
 
+For co-installation with the shared `wsinsight`/`sptxinsight` environment,
+KurtoRank pins a compatibility set (`numpy<2`, `zarr<3`, and spatial stack
+caps). This avoids resolver drift to newer spatial dependencies that require
+`numpy>=2` and break wsinsight's locked stack.
+
+Recommended in wsinsight workflows:
+
+```bash
+cd /workspace/wsinsight/sptxinsight
+pip install -e '.[kurtorank]'
+```
+
+This installs sptxinsight and a wsinsight-compatible KurtoRank dependency set
+in one resolver pass.
+
 After installation you get a `kurtorank` console script and an importable
 `kurtorank` Python package.
 
@@ -62,7 +77,7 @@ After installation you get a `kurtorank` console script and an importable
 
 ```bash
 kurtorank --help
-kurtorank --version            # kurtorank, version 3.0.0
+kurtorank --version            # kurtorank, version 3.1.0
 kurtorank annotate --help
 kurtorank rank-markers --help
 kurtorank build-panel --help
@@ -141,9 +156,9 @@ for 18 tissues.
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v4_1.csv \
-  --output markers-v4_1.csv \
-  --qc-output markers-v4_1_qc.csv \
+  --input  markers-v5.csv \
+  --output markers-v5.csv \
+  --qc-output markers-v5_qc.csv \
   --census-uri /path/to/census-soma \
   --tissues breast,colorectal,immune,circulating \
   --parallel 4 \
@@ -173,8 +188,8 @@ Key flags:
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v3.csv \
-  --output markers-v3.csv \
+  --input  markers-v5.csv \
+  --output markers-v5.csv \
   --census-uri /path/to/census-soma \
   --parallel 18 \
   --checkpoint checkpoint.csv \
@@ -223,8 +238,8 @@ is public; `--no-sign-request` skips AWS credentials.
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v3.csv \
-  --output markers-v3.csv \
+  --input  markers-v5.csv \
+  --output markers-v5.csv \
   --census-version 2025-11-08 \
   --parallel 4 \
   --checkpoint checkpoint.csv \
@@ -254,7 +269,7 @@ Outputs:
 from kurtorank import rerank_markers
 
 df_out, qc_df = rerank_markers(
-    input_csv="markers-v3.csv",
+  input_csv="markers-v5.csv",
     tissues=["breast", "colorectal"],
     census_uri="/path/to/census-soma",
     parallel=4,
@@ -278,7 +293,7 @@ Outputs are written **only** when `output_csv` / `qc_output` are provided.
 (DEG) tables from the public [DISCO atlas](https://immunesinglecell.com)
 and emits a **skeleton** marker CSV suitable as a starting point for a
 new tissue. The resulting CSV is *not* a drop-in replacement for
-`markers-v3.csv` — the biology columns consumed by `annotate`
+`markers-v5.csv` — the biology columns consumed by `annotate`
 (`major_type`, `pannuke_label`, `hne_type`, `hne_label`, `common`,
 `malignant`) must be filled in manually after curation.
 
@@ -350,15 +365,15 @@ build_panel(
 ```bash
 # (once) rerank the panel against a new Census release:
 kurtorank rank-markers \
-  --input  markers-v4_1.csv \
-  --output markers-v4_1.ranked.csv \
+  --input  markers-v5.csv \
+  --output markers-v5.ranked.csv \
   --census-uri /path/to/census-soma \
   --parallel 8
 
 # (per slide) annotate:
 kurtorank annotate \
   --xenium-dir /data/slides/sample_A/outs \
-  --markers-csv markers-v4_1.ranked.csv \
+  --markers-csv markers-v5.ranked.csv \
   --tissue-type breast \
   --use-top-k-markers 30 \
   --output-dir /data/results/sample_A
@@ -371,7 +386,7 @@ kurtorank annotate \
 | | v2 | v3 |
 | --- | --- | --- |
 | Distribution | Loose scripts | Installable `kurtorank` package |
-| Marker CSV | `markers-v2.csv` (hand-curated) | `markers-v3.csv` (atlas-reranked) |
+| Marker CSV | `markers-v2.csv` (hand-curated) | `markers-v5.csv` (atlas-reranked + curated) |
 | Marker order | Literature order | Atlas specificity (composite AUC + log2FC + pct_in − pct_out) |
 | Marker truncation | None | `--use-top-k-markers K` |
 | SNR source | Forced `control_probe_counts` | Prefers `negative_probe_counts`; fallback recorded in `uns` |

@@ -8,7 +8,7 @@ KurtoRank v3 annotate pipeline. Ported from kurtorank3.ipynb, derived from
 kurtorank2-cli.py.
 
 v3 changes relative to v2:
-  - Consumes markers-v4_1.csv (atlas-reranked by rank_markers.py). Tolerates
+    - Consumes an atlas-reranked marker CSV (bundled default: markers-v5.csv). Tolerates
     the extra `rank_source` and `low_support` columns; malignant filtering
     uses the `malignant` column rather than v2's `normal`.
   - Optional `--use-top-k-markers K` truncation: keep only the K most
@@ -50,13 +50,10 @@ import click
 
 
 def _default_markers_csv() -> Path:
-    """Path to the markers-v4_1.csv bundled with this package."""
-    try:
-        from importlib.resources import files as _resource_files
-        return Path(str(_resource_files("kurtorank.markers") / "data" / "markers-v4_1.csv"))
-    except Exception:
-        # Fallback for editable installs / older Python.
-        return Path(__file__).resolve().parent.parent / "markers" / "data" / "markers-v4_1.csv"
+    """Path to the default bundled markers CSV shipped with this package."""
+    from kurtorank.markers import default_markers_csv
+
+    return default_markers_csv()
 
 
 import matplotlib
@@ -1170,7 +1167,7 @@ def run_kurtorank(
 
     all_markers = all_markers_df.set_index("subtype")["markers"].apply(lambda x: x.split(",")).to_dict()
     # v3: optionally truncate each subtype's marker list to top-K genes.
-    # markers-v4_1.csv stores genes in atlas-derived specificity order, so
+    # The marker CSV stores genes in atlas-derived specificity order, so
     # the first K are the most discriminative per Census scoring.
     if use_top_k_markers is not None and use_top_k_markers > 0:
         k = int(use_top_k_markers)
@@ -2337,12 +2334,53 @@ def visualize_annotation(
 
 
 def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
-    subtype_data = adata.obs.groupby("graphclust")["cell_subtype"].value_counts(normalize=True).unstack(fill_value=0)
-    majortype_data = adata.obs.groupby("graphclust")["cell_major_type"].value_counts(normalize=True).unstack(fill_value=0)
-    pannuke_label_data = adata.obs.groupby("graphclust")["cell_pannuke_label"].value_counts(normalize=True).unstack(fill_value=0)
-    hne_type_data = adata.obs.groupby("graphclust")["cell_hne_type"].value_counts(normalize=True).unstack(fill_value=0)
-    hne_label_data = adata.obs.groupby("graphclust")["cell_hne_label"].value_counts(normalize=True).unstack(fill_value=0)
-    pantissue_label_data = adata.obs.groupby("graphclust")["cell_pantissue_label"].value_counts(normalize=True).unstack(fill_value=0)
+    cluster_col = None
+    for candidate in [
+        "graphclust",
+        adata.uns.get("primary_cluster_key"),
+        "clusters",
+        "leiden",
+    ]:
+        if candidate and candidate in adata.obs.columns:
+            cluster_col = candidate
+            break
+    if cluster_col is None:
+        raise ValueError(
+            "Cannot export QuST CSVs: no cluster column found in adata.obs. "
+            "Tried graphclust, primary_cluster_key, clusters, leiden."
+        )
+
+    subtype_data = adata.obs.groupby(cluster_col)["cell_subtype"].value_counts(normalize=True).unstack(fill_value=0)
+    majortype_data = adata.obs.groupby(cluster_col)["cell_major_type"].value_counts(normalize=True).unstack(fill_value=0)
+    pannuke_label_data = adata.obs.groupby(cluster_col)["cell_pannuke_label"].value_counts(normalize=True).unstack(fill_value=0)
+    hne_type_data = adata.obs.groupby(cluster_col)["cell_hne_type"].value_counts(normalize=True).unstack(fill_value=0)
+    hne_label_data = adata.obs.groupby(cluster_col)["cell_hne_label"].value_counts(normalize=True).unstack(fill_value=0)
+
+    pantissue_col = None
+    for candidate in ["cell_pantissue_label", "kurtorank_pannuke_label", "cell_pannuke_label"]:
+        if candidate in adata.obs.columns:
+            pantissue_col = candidate
+            break
+    if pantissue_col is None:
+        logger.warning(
+            "Pantissue label column missing in annotated.h5ad; using 'unknown' for pantissue assignment export."
+        )
+        pantissue_series = pd.Series("unknown", index=adata.obs.index)
+        pantissue_label_data = pd.DataFrame(
+            {"unknown": [1.0] * adata.obs[cluster_col].nunique()},
+            index=sorted(adata.obs[cluster_col].astype(str).unique()),
+        )
+    else:
+        if pantissue_col != "cell_pantissue_label":
+            logger.warning(
+                "Using '%s' as fallback for missing 'cell_pantissue_label' during QuST export.",
+                pantissue_col,
+            )
+        pantissue_label_data = (
+            adata.obs.groupby(cluster_col)[pantissue_col]
+            .value_counts(normalize=True)
+            .unstack(fill_value=0)
+        )
 
     subtype_assignment = pd.DataFrame(
         {
@@ -2417,8 +2455,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     "--markers-csv",
     type=click.Path(exists=True, dir_okay=False, file_okay=True, path_type=Path),
     default=lambda: _default_markers_csv(),
-    show_default="bundled markers-v4_1.csv",
-    help="Marker gene CSV file. Defaults to the markers-v4_1.csv shipped with "
+    show_default="bundled markers-v5.csv",
+    help="Marker gene CSV file. Defaults to the bundled markers-v5.csv shipped with "
          "this package; pass a path to override.",
 )
 @click.option(
@@ -2569,7 +2607,7 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     default=None,
     show_default=True,
     help="Truncate each subtype's marker list to the top-K most specific "
-         "genes (order in markers-v4_1.csv). Requires an atlas-reranked CSV "
+         "genes (order in the marker CSV). Requires an atlas-reranked CSV "
          "produced by rank_markers.py. Leave unset to use the full list.",
 )
 def main(

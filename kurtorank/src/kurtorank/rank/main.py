@@ -1,8 +1,9 @@
 """
 rank_markers.py
 ---------------
-Rerank marker-gene lists in markers-v4_1.csv by atlas-derived specificity
-scores using the CELLxGENE Census (human reference).
+Rerank marker-gene lists in a marker CSV (default: bundled markers-v5.csv)
+by atlas-derived specificity scores using the CELLxGENE Census (human
+reference).
 
 Policy (from chat discussion):
   - Ranking source: CELLxGENE Census (streaming, no bulk download).
@@ -15,13 +16,13 @@ Policy (from chat discussion):
     `rank_source = "v3_curated"` (keep original order, trimmed to ceiling).
 
 Outputs:
-  - markers-v4_1.csv       : overwritten with reordered `markers` column plus
-                             two new columns: `rank_source`, `low_support`.
-  - markers-v4_1_qc.csv    : one row per (subtype, gene) with component scores
-                             and assigned rank, to audit later.
+    - output markers CSV     : overwritten with reordered `markers` column plus
+                                                         two new columns: `rank_source`, `low_support`.
+    - *_qc.csv               : one row per (subtype, gene) with component scores
+                                                         and assigned rank, to audit later.
 
 Usage:
-    python rank_markers.py              # run on all 337 rows
+    python rank_markers.py              # run on all rows in the input CSV
     python rank_markers.py --tissue breast   # restrict to one tissue (debug)
     python rank_markers.py --dry-run    # compute but do not overwrite v3
 """
@@ -40,6 +41,8 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
+
+from kurtorank.markers import default_markers_csv
 
 # Silence the anndata "ImplicitModificationWarning: Transforming to str index"
 # that Census get_anndata emits per query; it polluted the log so badly that
@@ -1149,7 +1152,7 @@ def _run_rerank(args) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def rerank_markers(
     *,
-    input_csv: str | Path = "markers-v4_1.csv",
+    input_csv: str | Path = default_markers_csv(),
     output_csv: str | Path | None = None,
     qc_output: str | Path | None = None,
     tissue: str | None = None,
@@ -1172,7 +1175,7 @@ def rerank_markers(
 
     Parameters
     ----------
-    input_csv : path to markers CSV (schema matching ``markers-v4_1.csv``).
+    input_csv : path to markers CSV (schema matching the bundled panel).
     output_csv : if set, write the reranked CSV here.
     qc_output : if set, write the per-gene QC CSV here.
     tissue : limit processing to this single ``tissue_type``.
@@ -1224,11 +1227,15 @@ def rerank_markers(
 
 
 def main() -> int:
+    default_input = str(default_markers_csv())
+    default_output = default_input
+    default_qc_output = str(Path(default_input).with_name(f"{Path(default_input).stem}_qc.csv"))
+
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input", default="markers-v4_1.csv")
-    ap.add_argument("--output", default="markers-v4_1.csv",
+    ap.add_argument("--input", default=default_input)
+    ap.add_argument("--output", default=default_output,
                     help="Where to write the reranked CSV (in-place by default).")
-    ap.add_argument("--qc-output", default="markers-v4_1_qc.csv")
+    ap.add_argument("--qc-output", default=default_qc_output)
     ap.add_argument("--tissue", default=None,
                     help="Limit to one tissue_type (debug).")
     ap.add_argument("--tissues", default=None,

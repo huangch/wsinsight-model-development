@@ -1,10 +1,21 @@
-"""Unified `kurtorank` CLI with `annotate` and `rank-markers` subcommands."""
+"""Unified `kurtorank` CLI with `annotate`, `rank-markers`, and `build-panel` subcommands."""
 from __future__ import annotations
 
 import os
 import sys
+import warnings
 
 import click
+
+
+# Suppress a known docstring-template warning from docrep that can appear when
+# importing scanpy/squidpy stacks. This is cosmetic and does not affect results.
+warnings.filterwarnings(
+    "ignore",
+    message=r".*not a valid key!",
+    category=SyntaxWarning,
+    module=r"docrep(\..*)?",
+)
 
 
 # ---------------------------------------------------------------------------

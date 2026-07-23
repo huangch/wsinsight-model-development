@@ -102,8 +102,11 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
             xpx = (df["x_um"] / cfg.mpp).to_numpy()
             ypx = (df["y_um"] / cfg.mpp).to_numpy()
         else:
+            # target_wh = full-res H&E (target) dims; the nucleus mask is at that
+            # resolution, so its shape supplies the bUnwarpJ lattice extent.
             xy = map_cells(df[["x_um", "y_um"]].to_numpy(), params,
-                           elastic if elastic.exists() else None, cfg.transform)
+                           elastic if elastic.exists() else None, cfg.transform,
+                           target_wh=(mask.shape[1], mask.shape[0]))
             xpx, ypx = xy[:, 0], xy[:, 1]
         xpx = np.clip(np.round(xpx).astype(int), 0, mask.shape[1] - 1)
         ypx = np.clip(np.round(ypx).astype(int), 0, mask.shape[0] - 1)

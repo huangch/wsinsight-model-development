@@ -35,6 +35,11 @@ warnings.filterwarnings(
     "ignore",
     message="Transforming to str index.",
 )
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message=r"`__version__` is deprecated, use `importlib\.metadata\.version\('anndata'\)` instead\.",
+)
 
 import os
 import gc
@@ -676,10 +681,11 @@ def run_leiden_scan(
     logger.info(f"Chosen primary cluster: {primary_cluster}")
 
     if generate_plots:
+        primary_qc_colors = ["total_counts", "n_genes_by_counts", primary_cluster]
         sc.pl.umap(
             adata,
-            color=["total_counts", "n_genes_by_counts", primary_cluster],
-            # color=[primary_cluster],
+            color=primary_qc_colors,
+            title=primary_qc_colors,
             legend_loc="on data",
             legend_fontsize=8,
             legend_fontoutline=2,
@@ -690,12 +696,11 @@ def run_leiden_scan(
 
         sc.pl.spatial(
             adata,
-            color=["total_counts", "n_genes_by_counts", primary_cluster],
-            # color=[primary_cluster],
+            color=primary_qc_colors,
             size=10,
             show=False,
             spot_size=1,
-            title="Spatial Distribution of Clusters",
+            title=primary_qc_colors,
         )
         save_current_fig(out_dir, "spatial_primary_cluster.png")
 
@@ -1234,6 +1239,7 @@ def run_kurtorank(
     tissue_type: str,
     common_only: bool,
     normal_only: bool,
+    include_immune: bool,
     method_switch: Mapping[str, bool],
     n_perm: int,
     n_jobs: int,
@@ -1246,11 +1252,10 @@ def run_kurtorank(
     logger.info(f"Reading markers from: {markers_csv}")
     all_markers_df = pd.read_csv(markers_csv)
 
-    all_markers_df = all_markers_df[
-        (all_markers_df.tissue_type == tissue_type)
-        | (all_markers_df.tissue_type == "immune")
-        | (all_markers_df.tissue_type == "circulating")
-    ]
+    keep_tissues = [tissue_type]
+    if include_immune:
+        keep_tissues.extend(["immune", "circulating"])
+    all_markers_df = all_markers_df[all_markers_df.tissue_type.isin(keep_tissues)]
 
     if common_only:
         all_markers_df = all_markers_df[all_markers_df.common == True]
@@ -1337,7 +1342,20 @@ def run_kurtorank(
         logger.info(f"Cluster order for neighborhood enrichment: {cluster_order}")
 
         # 2) Neighborhood enrichment using the categorical ordering
-        sq.gr.nhood_enrichment(adata, cluster_key=primary_cluster)
+        # Suppress known scanpy/anndata deprecation noise emitted from worker
+        # imports in some environments.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                module=r"scanpy\\..*",
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                module=r"anndata\\..*",
+            )
+            sq.gr.nhood_enrichment(adata, cluster_key=primary_cluster)
 
         # 3) Plot with consistent cluster order and save to disk when requested
         if generate_plots:
@@ -1351,11 +1369,22 @@ def run_kurtorank(
             save_fig(fig, out_dir, "nhood_enrichment.png")
 
         # now Moran's I
-        sq.gr.spatial_autocorr(
-            adata,
-            mode="moran",
-            genes=available_markers,
-        )
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                module=r"scanpy\\..*",
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                module=r"anndata\\..*",
+            )
+            sq.gr.spatial_autocorr(
+                adata,
+                mode="moran",
+                genes=available_markers,
+            )
 
         if generate_plots and "moranI" in adata.uns:
             moran_scores = adata.uns["moranI"]
@@ -2617,6 +2646,12 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     help="Include only non-malignant (normal) cell types.",
 )
 @click.option(
+    "--include-immune/--no-include-immune",
+    default=True,
+    show_default=True,
+    help="Include immune/circulating marker rows in addition to the selected tissue.",
+)
+@click.option(
     "--use-graphclust/--use-leiden",
     default=True,
     show_default=True,
@@ -2749,6 +2784,7 @@ def main(
     output_dir,
     common_only,
     normal_only,
+    include_immune,
     use_graphclust,
     chosen_leiden_res,
     min_genes,
@@ -2846,6 +2882,7 @@ def main(
     logger.info(f"Tissue type: {tissue_type}")
     logger.info(f"Common only: {common_only}")
     logger.info(f"Normal only (exclude malignant markers): {normal_only}")
+    logger.info(f"Include immune/circulating markers: {include_immune}")
     logger.info(f"Use graphclust: {use_graphclust}")
     logger.info(f"Highly variable gene count: {n_top_genes}")
     logger.info(f"Generate plots: {generate_plots}")
@@ -2899,6 +2936,7 @@ def main(
         tissue_type=tissue_type,
         common_only=common_only,
         normal_only=normal_only,
+            include_immune=include_immune,
         method_switch=method_switch,
         n_perm=n_perm,
         n_jobs=n_jobs,

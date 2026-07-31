@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Annotate every Xenium sample under data/xenium EXCEPT heart tissue with
-# KurtoRank (markers-v5, STHELAR label space), then train one pooled
+# KurtoRank (markers-v6, STHELAR label space), then train one pooled
 # "pantissue" CellViT head on the sthelar_full label vocabulary.
 #
 # Why the two phases:
@@ -32,7 +32,7 @@ INPUT="${1:-$ROOT/data/xenium}"
 OUT="$ROOT/models"
 TASK="sthelar_full"
 EXCLUDE="heart"
-MARKERS="${MARKERS:-$KURTO/src/kurtorank/markers/data/markers-v5.csv}"
+MARKERS="${MARKERS:-$KURTO/src/kurtorank/markers/data/markers-v6.csv}"
 TOPK="${TOPK:-25}"
 
 [ -d "$INPUT" ]     || { echo "ERROR: input dir not found: $INPUT" >&2; exit 1; }
@@ -43,7 +43,7 @@ FARM="$WORK/xenium_no_${EXCLUDE}"
 CFG="$WORK/run_sthelar.yaml"
 trap 'rm -rf "$WORK"' EXIT
 
-# STHELAR labels only exist in markers-v5; wsitrain has no --markers-csv flag,
+# STHELAR labels and lcp_* tags exist in markers-v6; wsitrain has no --markers-csv flag,
 # so pass them (plus top-k truncation) through a --config override file.
 cat > "$CFG" <<YAML
 markers_csv: $MARKERS

@@ -26,10 +26,10 @@ kurtorank/
     ├── rank/main.py       # Census reranker
     └── markers/
         ├── __init__.py    # default_markers_csv()
-        └── data/markers-v5.csv
+        └── data/markers-v6.csv
 ```
 
-The curated panel (`markers-v5.csv`) is bundled as package data, so the
+The curated panel (`markers-v6.csv`) is bundled as package data, so the
 annotate CLI has a sensible default and no extra files need to travel with
 the install.
 
@@ -111,7 +111,7 @@ kurtorank annotate \
 | --- | --- |
 | `--xenium-dir` | Path to Xenium `outs/` directory. **Required**. |
 | `--tissue-type` | `bladder, bone, brain, breast, cervix, circulating, colorectal, heart, immune, kidney, liver, lung, lymph_node, ovary, pancreas, prostate, skin, tonsil`. **Required**. |
-| `--markers-csv` | Panel CSV. Defaults to the bundled `markers-v5.csv`; pass a path to override. |
+| `--markers-csv` | Panel CSV. Defaults to the bundled `markers-v6.csv`; pass a path to override. |
 | `--output-dir` | Where to write `annotated.h5ad`, plots, CSVs (defaults to `--xenium-dir`). |
 | `--common-only / --no-common-only` | Keep only `common==True` rows. |
 | `--normal-only / --include-cancer` | Exclude / include malignant subtypes. |
@@ -149,16 +149,16 @@ Full list: `kurtorank annotate --help`.
 
 Needed only when (a) adding/removing subtypes, (b) refreshing against a
 newer Census release, or (c) customizing the panel to a different tissue
-mix. The bundled `markers-v5.csv` ships a curated + already-reranked panel
+mix. The bundled `markers-v6.csv` ships a curated + already-reranked panel
 for 18 tissues.
 
 ### CLI
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v5.csv \
-  --output markers-v5.csv \
-  --qc-output markers-v5_qc.csv \
+  --input  markers-v6.csv \
+  --output markers-v6.csv \
+  --qc-output markers-v6_qc.csv \
   --census-uri /path/to/census-soma \
   --tissues breast,colorectal,immune,circulating \
   --parallel 4 \
@@ -188,8 +188,8 @@ Key flags:
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v5.csv \
-  --output markers-v5.csv \
+  --input  markers-v6.csv \
+  --output markers-v6.csv \
   --census-uri /path/to/census-soma \
   --parallel 18 \
   --checkpoint checkpoint.csv \
@@ -238,8 +238,8 @@ is public; `--no-sign-request` skips AWS credentials.
 
 ```bash
 kurtorank rank-markers \
-  --input  markers-v5.csv \
-  --output markers-v5.csv \
+  --input  markers-v6.csv \
+  --output markers-v6.csv \
   --census-version 2025-11-08 \
   --parallel 4 \
   --checkpoint checkpoint.csv \
@@ -269,7 +269,7 @@ Outputs:
 from kurtorank import rerank_markers
 
 df_out, qc_df = rerank_markers(
-  input_csv="markers-v5.csv",
+  input_csv="markers-v6.csv",
     tissues=["breast", "colorectal"],
     census_uri="/path/to/census-soma",
     parallel=4,
@@ -293,9 +293,10 @@ Outputs are written **only** when `output_csv` / `qc_output` are provided.
 (DEG) tables from the public [DISCO atlas](https://immunesinglecell.com)
 and emits a **skeleton** marker CSV suitable as a starting point for a
 new tissue. The resulting CSV is *not* a drop-in replacement for
-`markers-v5.csv` — the biology columns consumed by `annotate`
+`markers-v6.csv` — the biology columns consumed by `annotate`
 (`major_type`, `pannuke_label`, `hne_type`, `hne_label`, `common`,
-`malignant`) must be filled in manually after curation.
+`malignant`) plus optional rollup columns such as `pantissue_*`, `sthelar_*`,
+and `lcp_*` must be filled in manually after curation.
 
 ### 5.1. Discover atlases
 
@@ -365,7 +366,7 @@ build_panel(
 ```bash
 # (once) rerank the panel against a new Census release:
 kurtorank rank-markers \
-  --input  markers-v5.csv \
+  --input  markers-v6.csv \
   --output markers-v5.ranked.csv \
   --census-uri /path/to/census-soma \
   --parallel 8
@@ -386,7 +387,7 @@ kurtorank annotate \
 | | v2 | v3 |
 | --- | --- | --- |
 | Distribution | Loose scripts | Installable `kurtorank` package |
-| Marker CSV | `markers-v2.csv` (hand-curated) | `markers-v5.csv` (atlas-reranked + curated) |
+| Marker CSV | `markers-v2.csv` (hand-curated) | `markers-v6.csv` (atlas-reranked + curated + lcp tags) |
 | Marker order | Literature order | Atlas specificity (composite AUC + log2FC + pct_in − pct_out) |
 | Marker truncation | None | `--use-top-k-markers K` |
 | SNR source | Forced `control_probe_counts` | Prefers `negative_probe_counts`; fallback recorded in `uns` |

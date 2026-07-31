@@ -1,5 +1,5 @@
 """Derive celltype_assignment_sthelar_full_label.csv from each sample's
-celltype_assignment_subtype.csv using the markers-v5.csv crosswalk.
+celltype_assignment_subtype.csv using the markers-v6.csv crosswalk.
 
 kurtorank annotate writes per-cluster assignment CSVs for the subtype, major,
 pannuke_label, hne_type, hne_label and pantissue_label vocabularies, but NOT
@@ -7,7 +7,7 @@ the STHELAR label space. wsitrain's `transfer` stage (task=sthelar_full) reads
 `celltype_assignment_sthelar_full_label.csv`, so this script produces it.
 
 The per-cluster `subtype` -> `sthelar_full_label` mapping is 1:1 in
-markers-v5.csv (unlike hne_label, which fans out for lymphocyte /
+markers-v6.csv (unlike hne_label, which fans out for lymphocyte /
 hematologic_blast), so we remap the subtype CSV's `cell_type` column through it.
 Cluster-level assignment is unchanged; only the label vocabulary is collapsed.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 import pandas as pd
 
 _PKG_MARKERS = (Path(__file__).resolve().parent.parent
-                / "src/kurtorank/markers/data/markers-v5.csv")
+                / "src/kurtorank/markers/data/markers-v6.csv")
 
 
 def build_subtype_to_sthelar_map(markers_csv: Path) -> dict[str, str]:
@@ -46,7 +46,7 @@ def main() -> None:
     ap.add_argument("--data-dir", required=True, type=Path,
                     help="Root to recurse for celltype_assignment_subtype.csv files.")
     ap.add_argument("--markers-csv", type=Path, default=_PKG_MARKERS,
-                    help="markers-v5.csv with the subtype->sthelar_full_label crosswalk.")
+                    help="markers-v6.csv with the subtype->sthelar_full_label crosswalk.")
     ap.add_argument("--exclude", action="append", default=[],
                     help="Top-level tissue folder name(s) to skip (repeatable).")
     ap.add_argument("--overwrite", action="store_true",
@@ -88,7 +88,7 @@ def main() -> None:
     print(f"\nWrote {written} file(s); skipped {skipped} existing "
           f"(use --overwrite to rebuild).")
     if unknown_total:
-        print("\nWARNING: subtype values not in markers-v5.csv (left unmapped):")
+        print("\nWARNING: subtype values not in markers-v6.csv (left unmapped):")
         for k, v in sorted(unknown_total.items()):
             print(f"  {k!r} appeared in {v} file(s)")
 

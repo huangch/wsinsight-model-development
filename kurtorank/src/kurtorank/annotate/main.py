@@ -8,7 +8,7 @@ KurtoRank v3 annotate pipeline. Ported from kurtorank3.ipynb, derived from
 kurtorank2-cli.py.
 
 v3 changes relative to v2:
-    - Consumes an atlas-reranked marker CSV (bundled default: markers-v5.csv). Tolerates
+    - Consumes an atlas-reranked marker CSV (bundled default: markers-v6.csv). Tolerates
     the extra `rank_source` and `low_support` columns; malignant filtering
     uses the `malignant` column rather than v2's `normal`.
   - Optional `--use-top-k-markers K` truncation: keep only the K most
@@ -686,6 +686,8 @@ def _process_cluster_worker(cluster_id):
     all_hne_labels = ctx["all_hne_labels"]
     all_pantissue_labels = ctx["all_pantissue_labels"]
     all_pantissue_types = ctx["all_pantissue_types"]
+    all_lcp_types = ctx["all_lcp_types"]
+    all_lcp_labels = ctx["all_lcp_labels"]
     all_sthelar_full_types = ctx["all_sthelar_full_types"]
     all_sthelar_full_labels = ctx["all_sthelar_full_labels"]
     all_sthelar_coarse_types = ctx["all_sthelar_coarse_types"]
@@ -1111,6 +1113,8 @@ def _process_cluster_worker(cluster_id):
     result_df["assigned_cell_hne_label"] = all_hne_labels[chosen]
     result_df["assigned_cell_pantissue_type"] = all_pantissue_types[chosen]
     result_df["assigned_cell_pantissue_label"] = all_pantissue_labels[chosen]
+    result_df["assigned_cell_lcp_type"] = all_lcp_types[chosen]
+    result_df["assigned_cell_lcp_label"] = all_lcp_labels[chosen]
     result_df["assigned_cell_sthelar_full_type"] = all_sthelar_full_types[chosen]
     result_df["assigned_cell_sthelar_full_label"] = all_sthelar_full_labels[chosen]
     result_df["assigned_cell_sthelar_coarse_type"] = all_sthelar_coarse_types[chosen]
@@ -1190,14 +1194,15 @@ def run_kurtorank(
         all_pantissue_types = all_markers_df.set_index("subtype")["pantissue_type"].to_dict()
     else:
         all_pantissue_types = dict(all_hne_types)
-    # v5: sthelar_{full,coarse,cancer_normal}_{type,label} columns are optional.
-    # If absent (older marker CSVs) fall back to pantissue_{type,label} so
-    # downstream code paths still work.
+    # Optional derived rollup columns fall back to pantissue_{type,label} so
+    # older marker CSVs continue to work.
     def _opt_col(col: str, fallback: dict) -> dict:
         if col in all_markers_df.columns:
             return all_markers_df.set_index("subtype")[col].to_dict()
         return dict(fallback)
 
+    all_lcp_types = _opt_col("lcp_type", all_pantissue_types)
+    all_lcp_labels = _opt_col("lcp_label", all_pantissue_labels)
     all_sthelar_full_types = _opt_col("sthelar_full_type", all_pantissue_types)
     all_sthelar_full_labels = _opt_col("sthelar_full_label", all_pantissue_labels)
     all_sthelar_coarse_types = _opt_col("sthelar_coarse_type", all_pantissue_types)
@@ -1405,6 +1410,8 @@ def run_kurtorank(
         "all_hne_labels": all_hne_labels,
         "all_pantissue_labels": all_pantissue_labels,
         "all_pantissue_types": all_pantissue_types,
+        "all_lcp_types": all_lcp_types,
+        "all_lcp_labels": all_lcp_labels,
         "all_sthelar_full_types": all_sthelar_full_types,
         "all_sthelar_full_labels": all_sthelar_full_labels,
         "all_sthelar_coarse_types": all_sthelar_coarse_types,
@@ -1485,6 +1492,12 @@ def run_kurtorank(
 
     cluster_to_pantissue_label = final_df.groupby("cluster")["assigned_cell_pantissue_label"].first().to_dict()
     adata.obs["cell_pantissue_label"] = adata.obs[primary_cluster].map(cluster_to_pantissue_label)
+
+    cluster_to_lcp_type = final_df.groupby("cluster")["assigned_cell_lcp_type"].first().to_dict()
+    adata.obs["cell_lcp_type"] = adata.obs[primary_cluster].map(cluster_to_lcp_type)
+
+    cluster_to_lcp_label = final_df.groupby("cluster")["assigned_cell_lcp_label"].first().to_dict()
+    adata.obs["cell_lcp_label"] = adata.obs[primary_cluster].map(cluster_to_lcp_label)
 
     cancer_associated = final_df.groupby("cluster")["cancer_associated"].first().to_dict()
     adata.obs["cancer_associated"] = adata.obs[primary_cluster].map(cancer_associated)
@@ -2419,12 +2432,27 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
         }
     ).set_index("classification")
 
+    lcp_label_assignment = None
+    if "cell_lcp_label" in adata.obs.columns:
+        lcp_label_data = (
+            adata.obs.groupby(cluster_col)["cell_lcp_label"]
+            .value_counts(normalize=True)
+            .unstack(fill_value=0)
+        )
+        lcp_label_assignment = pd.DataFrame(
+            {
+                "classification": lcp_label_data.idxmax(axis=1).index.tolist(),
+                "cell_type": lcp_label_data.idxmax(axis=1).tolist(),
+            }
+        ).set_index("classification")
+
     out_sub = out_dir / "celltype_assignment_subtype.csv"
     out_major = out_dir / "celltype_assignment_major.csv"
     out_pannuke = out_dir / "celltype_assignment_pannuke_label.csv"
     out_hne_type = out_dir / "celltype_assignment_hne_type.csv"
     out_hne = out_dir / "celltype_assignment_hne_label.csv"
     out_pantissue = out_dir / "celltype_assignment_pantissue_label.csv"
+    out_lcp = out_dir / "celltype_assignment_lcp_label.csv"
 
     subtype_assignment.to_csv(out_sub)
     major_assignment.to_csv(out_major)
@@ -2432,6 +2460,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     hne_type_assignment.to_csv(out_hne_type)
     hne_label_assignment.to_csv(out_hne)
     pantissue_label_assignment.to_csv(out_pantissue)
+    if lcp_label_assignment is not None:
+        lcp_label_assignment.to_csv(out_lcp)
 
     logger.info(f"Saved QuST subtype assignment: {out_sub}")
     logger.info(f"Saved QuST major assignment: {out_major}")
@@ -2439,6 +2469,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     logger.info(f"Saved QuST H&E type assignment: {out_hne_type}")
     logger.info(f"Saved QuST H&E label assignment: {out_hne}")
     logger.info(f"Saved QuST pantissue label assignment: {out_pantissue}")
+    if lcp_label_assignment is not None:
+        logger.info(f"Saved QuST lcp label assignment: {out_lcp}")
 
 
 # ---------------------- CLI ----------------------
@@ -2455,8 +2487,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     "--markers-csv",
     type=click.Path(exists=True, dir_okay=False, file_okay=True, path_type=Path),
     default=lambda: _default_markers_csv(),
-    show_default="bundled markers-v5.csv",
-    help="Marker gene CSV file. Defaults to the bundled markers-v5.csv shipped with "
+    show_default="bundled markers-v6.csv",
+    help="Marker gene CSV file. Defaults to the bundled markers-v6.csv shipped with "
          "this package; pass a path to override.",
 )
 @click.option(

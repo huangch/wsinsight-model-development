@@ -1,7 +1,7 @@
 """
 rank_markers.py
 ---------------
-Rerank marker-gene lists in a marker CSV (default: bundled markers-v5.csv)
+Rerank marker-gene lists in a marker CSV (default: bundled markers-v6.csv)
 by atlas-derived specificity scores using the CELLxGENE Census (human
 reference).
 

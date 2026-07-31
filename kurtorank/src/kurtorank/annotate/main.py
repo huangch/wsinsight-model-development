@@ -39,9 +39,12 @@ warnings.filterwarnings(
 import os
 import gc
 import math
+import io
 import logging
 import signal
 import time
+import tarfile
+import zipfile
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
@@ -277,6 +280,65 @@ def resolve_method_switch(selected_methods: Sequence[str]) -> dict[str, bool]:
 # ---------------------- data loading ----------------------
 
 
+def _load_graphclust_df(xenium_dir: Path) -> pd.DataFrame | None:
+    """Load Xenium graphclust cluster table from filesystem or known archives.
+
+    Search order:
+      1) analysis/clustering/gene_expression_graphclust/clusters.csv
+      2) analysis.tar.gz
+      3) aux_outputs.tar.gz
+      4) analysis.zarr.zip
+    """
+    rel = Path("analysis") / "clustering" / "gene_expression_graphclust" / "clusters.csv"
+    csv_path = xenium_dir / rel
+    if csv_path.exists():
+        logger.info(f"Loading Xenium graphclust: {csv_path}")
+        return pd.read_csv(csv_path, dtype={"Cluster": str})
+
+    def _looks_like_graphclust(name: str) -> bool:
+        n = name.replace("\\", "/")
+        return (
+            n.endswith("clusters.csv")
+            and "gene_expression_graphclust" in n
+            and "analysis/" in n
+        )
+
+    # tar.gz archives
+    for archive in ("analysis.tar.gz", "aux_outputs.tar.gz"):
+        archive_path = xenium_dir / archive
+        if not archive_path.exists():
+            continue
+        try:
+            with tarfile.open(archive_path, "r:gz") as tf:
+                candidates = [m for m in tf.getmembers() if m.isfile() and _looks_like_graphclust(m.name)]
+                if not candidates:
+                    continue
+                member = sorted(candidates, key=lambda m: len(m.name))[0]
+                logger.info(f"Loading Xenium graphclust from archive: {archive_path}::{member.name}")
+                fobj = tf.extractfile(member)
+                if fobj is None:
+                    continue
+                return pd.read_csv(fobj, dtype={"Cluster": str})
+        except Exception as exc:
+            logger.warning(f"Failed reading graphclust from {archive_path}: {exc}")
+
+    # zip archives
+    zip_path = xenium_dir / "analysis.zarr.zip"
+    if zip_path.exists():
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zf:
+                candidates = [n for n in zf.namelist() if _looks_like_graphclust(n)]
+                if candidates:
+                    name = sorted(candidates, key=len)[0]
+                    logger.info(f"Loading Xenium graphclust from archive: {zip_path}::{name}")
+                    with zf.open(name, "r") as fobj:
+                        return pd.read_csv(io.BytesIO(fobj.read()), dtype={"Cluster": str})
+        except Exception as exc:
+            logger.warning(f"Failed reading graphclust from {zip_path}: {exc}")
+
+    return None
+
+
 def load_or_build_adata(xenium_dir: Path) -> ad.AnnData:
     raw_path = xenium_dir / "raw.h5ad"
 
@@ -286,14 +348,37 @@ def load_or_build_adata(xenium_dir: Path) -> ad.AnnData:
         return adata
 
     logger.info(f"Loading Xenium spatial data from: {xenium_dir}")
+
+    # Compatibility shim: some spatialdata-io paths instantiate ZipStore with
+    # read_only=..., while older zarr versions accept mode='r' instead.
+    try:
+        import inspect
+        import zarr
+
+        zipstore_cls = getattr(getattr(zarr, "storage", None), "ZipStore", None)
+        if zipstore_cls is not None:
+            init_sig = inspect.signature(zipstore_cls.__init__)
+            if "read_only" not in init_sig.parameters:
+                _orig_zipstore_init = zipstore_cls.__init__
+
+                def _zipstore_init_compat(self, *args, **kwargs):
+                    if "read_only" in kwargs and "mode" not in kwargs:
+                        kwargs["mode"] = "r" if kwargs.pop("read_only") else "a"
+                    elif "read_only" in kwargs:
+                        kwargs.pop("read_only")
+                    return _orig_zipstore_init(self, *args, **kwargs)
+
+                zipstore_cls.__init__ = _zipstore_init_compat
+    except Exception:
+        # Best-effort shim; if unavailable, proceed and let downstream error surface.
+        pass
+
     sdata = xenium(str(xenium_dir), cells_as_circles=True)
     adata = sdata.tables["table"].copy()
     logger.info(f"Loaded adata: {adata}")
 
-    graphclust_csv = xenium_dir / "analysis" / "clustering" / "gene_expression_graphclust" / "clusters.csv"
-    if graphclust_csv.exists():
-        logger.info(f"Loading Xenium graphclust: {graphclust_csv}")
-        graphclust_df = pd.read_csv(graphclust_csv, dtype={"Cluster": str})
+    graphclust_df = _load_graphclust_df(xenium_dir)
+    if graphclust_df is not None:
         graphclust_dict = dict(zip(graphclust_df["Barcode"], graphclust_df["Cluster"]))
         adata.obs["graphclust"] = adata.obs.cell_id.map(graphclust_dict).astype("category")
     else:
@@ -307,10 +392,9 @@ def load_or_build_adata(xenium_dir: Path) -> ad.AnnData:
 def ensure_graphclust(adata: ad.AnnData, xenium_dir: Path):
     if "graphclust" in adata.obs.columns:
         return
-    graphclust_csv = xenium_dir / "analysis" / "clustering" / "gene_expression_graphclust" / "clusters.csv"
-    if graphclust_csv.exists():
-        logger.info(f"Adding 'graphclust' from: {graphclust_csv}")
-        graphclust_df = pd.read_csv(graphclust_csv, dtype={"Cluster": str})
+    graphclust_df = _load_graphclust_df(xenium_dir)
+    if graphclust_df is not None:
+        logger.info("Adding 'graphclust' from discovered source.")
         graphclust_dict = dict(zip(graphclust_df["Barcode"], graphclust_df["Cluster"]))
         adata.obs["graphclust"] = adata.obs.cell_id.map(graphclust_dict).astype("category")
     else:
@@ -500,12 +584,28 @@ def run_qc(
     # seurat_v3 needs to be done on dataraw counts w
     #
      
-    sc.pp.highly_variable_genes(
-        adata,
-        layer="counts",
-        flavor="seurat_v3",
-        n_top_genes=n_top_genes,
-    )
+    try:
+        sc.pp.highly_variable_genes(
+            adata,
+            layer="counts",
+            flavor="seurat_v3",
+            n_top_genes=n_top_genes,
+        )
+    except Exception as exc:
+        # seurat_v3 may require optional scikit-misc in some environments.
+        # Fall back to a dependency-light flavor to keep annotation usable.
+        if "skmisc" in str(exc).lower() or "scikit-misc" in str(exc).lower():
+            logger.warning(
+                "HVG flavor 'seurat_v3' unavailable (%s). Falling back to flavor='seurat'.",
+                exc,
+            )
+            sc.pp.highly_variable_genes(
+                adata,
+                flavor="seurat",
+                n_top_genes=n_top_genes,
+            )
+        else:
+            raise
     
     if generate_plots:
         logger.info("Plotting highly variable genes.")

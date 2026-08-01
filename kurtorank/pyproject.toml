@@ -20,7 +20,9 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-  "anndata>=0.12,<0.13",
+  # anndata pinned to <0.11 to allow co-installation with wsinsight env (numpy<2).
+  # Revert to >=0.12,<0.13 if reading 0.12-format h5ad raises IORegistryError.
+  "anndata>=0.9,<0.11",
   "scanpy<1.11",
   "squidpy<1.7",
   "spatialdata<0.5",

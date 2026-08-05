@@ -24,7 +24,7 @@ echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
 echo "== full training: $TISSUE =="
-wsitrain train \
+wsitrain run \
   --input "$INPUT" \
   --tissue "$TISSUE" \
   --task "$TASK" \
@@ -38,7 +38,7 @@ echo "Done. Model + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"
 
 if [ "${PARITY}" = "1" ]; then
   echo "== StarDist parity tile check =="
-  wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
+  wsitrain run --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
     --output "$OUT/stardist_parity" --to tile
   for s in "$OUT" "$OUT/stardist_parity"; do
     n=$(find "$s/trainingset/$TISSUE/train/labels" -name '*.csv' 2>/dev/null | wc -l)

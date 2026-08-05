@@ -21,7 +21,7 @@ export CELLVIT_ROOT=/path/to/CellViT-plus-plus
 
 ```bash
 wsitrain check --input /path/to/cohort --tissue pantissue
-wsitrain train --input /path/to/cohort --tissue breast
+wsitrain run --input /path/to/cohort --tissue breast
 wsitrain --version
 ```
 

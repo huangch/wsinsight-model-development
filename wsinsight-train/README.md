@@ -44,7 +44,7 @@ pixel-aligned). `wsitrain check` writes an editable `wsitrain_samples.csv`.
 
 ```bash
 wsitrain check --input DIR [--tissue T]     # preflight: samples + env + GPU
-wsitrain train --input DIR --tissue T ...    # full pipeline
+wsitrain run --input DIR --tissue T ...      # full pipeline
 wsitrain --version
 ```
 

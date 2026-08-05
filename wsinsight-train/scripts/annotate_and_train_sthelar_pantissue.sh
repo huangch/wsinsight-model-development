@@ -71,7 +71,7 @@ for t in "${TISSUES[@]}"; do ln -s "$INPUT/$t" "$FARM/$t"; done
 # ---------------------------------------------------------------------------
 for t in "${TISSUES[@]}"; do
   echo "== annotate: $t =="
-  wsitrain train \
+  wsitrain run \
     --input "$FARM" \
     --tissue "$t" \
     --task "$TASK" \
@@ -95,7 +95,7 @@ echo "== preflight (pooled, heart excluded) =="
 wsitrain check --input "$FARM" --tissue pantissue || true
 
 echo "== pan-tissue full cycle (segment -> export), task=$TASK =="
-wsitrain train \
+wsitrain run \
   --input "$FARM" \
   --tissue pantissue \
   --task "$TASK" \

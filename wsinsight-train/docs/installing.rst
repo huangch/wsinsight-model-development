@@ -20,4 +20,4 @@ Training example:
 
 .. code-block:: bash
 
-   wsitrain train --input /path/to/cohort --tissue breast --task sthelar_full
+   wsitrain run --input /path/to/cohort --tissue breast --task sthelar_full

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Full-cycle: annotate (kurtorank markers-v5, STHELAR label) -> segment ->
-# transfer -> tile -> split -> train -> validate -> export, for breast+lung.
-# Trained head + report land under cellvit-training/models/<tissue>/.
+# Full-cycle pan-tissue training: annotate (kurtorank markers-v5, STHELAR label)
+# -> segment -> transfer -> tile -> split -> train -> validate -> export,
+# pooling EVERY discovered tissue into one head. Includes auto-tune and
+# cellpose OOM guards.
 #
-# Usage: bash pipeline/train_breast_lung.sh
+# Usage: bash scripts/train_pantissue_v2.sh [input_dir]
 # Env:   set ENVBIN to a conda env bin with wsitrain+cellpose+kurtorank+torch.
 set -euo pipefail
 
@@ -27,7 +28,7 @@ echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "pantissue" || true
 
 echo "== full cycle (pantissue) =="
-wsitrain run \
+wsitrain train \
   --input "$INPUT" \
   --tissue "pantissue" \
   --task "$TASK" \

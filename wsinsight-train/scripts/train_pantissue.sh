@@ -27,7 +27,7 @@ echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue pantissue || true
 
 echo "== pan-tissue full cycle =="
-wsitrain run \
+wsitrain train \
   --input "$INPUT" \
   --tissue pantissue \
   --task "$TASK" \

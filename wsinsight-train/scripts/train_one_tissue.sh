@@ -21,11 +21,11 @@ echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
 echo "== cellpose run =="
-wsitrain run --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter cellpose \
+wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter cellpose \
   --output "$OUT/cellpose" --to tile
 
 echo "== stardist run (parity) =="
-wsitrain run --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
+wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
   --output "$OUT/stardist" --to tile
 
 echo "== compare tile/label counts =="
@@ -33,4 +33,4 @@ for s in cellpose stardist; do
   n=$(find "$OUT/$s/trainingset/$TISSUE/train/labels" -name '*.csv' 2>/dev/null | wc -l)
   echo "  $s: $n tiles"
 done
-echo "Done. Full train: wsitrain run --input $INPUT --tissue $TISSUE --output $OUT/cellpose"
+echo "Done. Full train: wsitrain train --input $INPUT --tissue $TISSUE --output $OUT/cellpose"

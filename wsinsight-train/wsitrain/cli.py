@@ -1,4 +1,4 @@
-"""wsitrain CLI: `run`, `check`, `version`. Minimal front door."""
+"""wsitrain CLI: `train`, `check`, `version`. Minimal front door."""
 from __future__ import annotations
 
 import argparse
@@ -63,7 +63,7 @@ def main(argv=None) -> int:
     c.add_argument("--tissue", default="pantissue")
     c.set_defaults(fn=_cmd_check)
 
-    r = sub.add_parser("run", help="Run the end-to-end pipeline.")
+    r = sub.add_parser("train", help="Run the end-to-end training pipeline.")
     r.add_argument("--input", required=True)
     r.add_argument("--tissue", default="pantissue")
     r.add_argument("--output", default=None)

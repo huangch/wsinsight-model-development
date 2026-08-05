@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# One-tissue smoke run + Cellpose-vs-StarDist parity check.
-# Usage: scripts/run_one_tissue.sh <input_dir> <tissue> [output_dir]
+# Single-tissue full training with optional Cellpose-vs-StarDist parity check.
+# Usage: scripts/train_one_tissue.sh <input_dir> <tissue> [output_dir]
+# Env:   PARITY=1 to also run StarDist tiling parity; TUNE=N for auto-tune iters.
 # Requires the `wsitrain` env (torch + cellpose + kurtorank) and $CELLVIT_ROOT.
 set -euo pipefail
 
@@ -10,6 +11,8 @@ INPUT="${1:?input dir}"
 TISSUE="${2:-breast}"
 OUT="${3:-$ROOT/models/$TISSUE}"
 TASK="${TASK:-sthelar_full}"
+PARITY="${PARITY:-0}"   # set to 1 to also tile with StarDist for comparison
+TUNE="${TUNE:-0}"       # auto-tune iterations after training (0 = off)
 
 export CELLVIT_ROOT="${CELLVIT_ROOT:?set CELLVIT_ROOT to the CellViT-plus-plus checkout}"
 export TMPDIR="${TMPDIR:-/tmp}"
@@ -20,17 +23,26 @@ mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
-echo "== cellpose run =="
-wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter cellpose \
-  --output "$OUT/cellpose" --to tile
+echo "== full training: $TISSUE =="
+wsitrain train \
+  --input "$INPUT" \
+  --tissue "$TISSUE" \
+  --task "$TASK" \
+  --segmenter cellpose \
+  --transform affine+bspline \
+  --output "$OUT" \
+  --tune "$TUNE" \
+  --gpus auto
 
-echo "== stardist run (parity) =="
-wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
-  --output "$OUT/stardist" --to tile
+echo "Done. Model + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"
 
-echo "== compare tile/label counts =="
-for s in cellpose stardist; do
-  n=$(find "$OUT/$s/trainingset/$TISSUE/train/labels" -name '*.csv' 2>/dev/null | wc -l)
-  echo "  $s: $n tiles"
-done
-echo "Done. Full train: wsitrain train --input $INPUT --tissue $TISSUE --output $OUT/cellpose"
+if [ "${PARITY}" = "1" ]; then
+  echo "== StarDist parity tile check =="
+  wsitrain train --input "$INPUT" --tissue "$TISSUE" --task "$TASK" --segmenter stardist \
+    --output "$OUT/stardist_parity" --to tile
+  for s in "$OUT" "$OUT/stardist_parity"; do
+    n=$(find "$s/trainingset/$TISSUE/train/labels" -name '*.csv' 2>/dev/null | wc -l)
+    seg=$([ "$s" = "$OUT" ] && echo cellpose || echo stardist)
+    echo "  $seg: $n tiles"
+  done
+fi

@@ -62,7 +62,7 @@ affine+bspline|affine|none`, `--tune N` (auto-tune iters), `--gpus auto`.
 ```bash
 bash scripts/train_one_tissue.sh data/xenium breast    # + cellpose/stardist parity
 bash scripts/train_breast_lung.sh                      # breast+lung pooled
-bash scripts/train_pantissue.sh                        # all tissues pooled
+bash scripts/train_pantissue.sh                        # all tissues pooled (with OOM guards + auto-tune)
 ```
 Override: `TASK=hne ENVBIN=... CELLVIT_ROOT=... bash scripts/...`.
 Caches default to `/workspace/.cellpose` + `/workspace/.torch`; tmp to `/tmp`.

@@ -53,15 +53,15 @@ Training scope via `--tissue`: one (`breast`), subset (`breast,lung`), or all
 validate → export`; bound with `--from/--to`, skip with `--skip`, resume via
 `manifest.json`.
 
-Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|hne|pantissue|…`,
-default `sthelar_full`), `--segmenter cellpose|stardist`, `--transform
-affine+bspline|affine|none`, `--tune N` (auto-tune iters), `--gpus auto`.
+Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|sthelar_cancer_normal|
+hne|pantissue|pannuke|lcp`, default `sthelar_full`), `--segmenter cellpose|stardist`,
+`--transform affine+bspline|affine|none`, `--tune N` (auto-tune iters), `--gpus auto`.
 
 ## Scripts
 
 ```bash
 bash scripts/train_one_tissue.sh data/xenium breast    # + cellpose/stardist parity
-bash scripts/train_breast_lung.sh                      # breast+lung pooled
+bash scripts/train_multi_tissue.sh data/xenium breast,lung   # pooled subset
 bash scripts/train_pantissue.sh                        # all tissues pooled (with OOM guards + auto-tune)
 ```
 Override: `TASK=hne ENVBIN=... CELLVIT_ROOT=... bash scripts/...`.

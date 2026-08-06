@@ -20,6 +20,15 @@ def step_range(start: str, end: str) -> list[str]:
     return list(STAGES[i:j + 1])
 
 
+# Stage -> key in its return dict that must be non-empty; a stage that produced
+# nothing must not be recorded as done or later runs resume on missing files.
+_REQUIRED_OUTPUT = {
+    "segment": "nuclei_per_sample",
+    "transfer": "cells_per_sample",
+    "tile": "tiles",
+}
+
+
 def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
         skip: list[str] | None = None, force: bool = False) -> int:
     skip = skip or []
@@ -37,6 +46,11 @@ def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
     todo = [s for s in step_range(from_step, to_step) if s not in skip]
     print(f"[run] tissue={cfg.tissue} samples={len(samples)} steps={todo}")
 
+    if not samples and {"annotate", "segment", "transfer", "tile"}.intersection(todo):
+        raise SystemExit(
+            f"[run] no samples found for tissue={cfg.tissue} under {cfg.input} — "
+            "check --input and that samples live in <input>/<tissue>/<sample>/outs/")
+
     for stage in todo:
         if not force and mf.is_done(stage):
             print(f"[{stage}] up-to-date — skipping")
@@ -44,6 +58,10 @@ def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
         print(f"[{stage}] running…")
         try:
             info = STAGE_FUNCS[stage](cfg, samples, cfg.output)
+            key = _REQUIRED_OUTPUT.get(stage)
+            if key and not (info or {}).get(key):
+                mf.mark(stage, "failed", **(info or {}))
+                raise SystemExit(f"[{stage}] produced no {key}; refusing to mark it done")
             mf.mark(stage, "done", **(info or {}))
         except NotImplementedError as e:
             mf.mark(stage, "pending", note=str(e))

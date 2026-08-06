@@ -3,12 +3,12 @@
 # KurtoRank (markers-v6, STHELAR label space), then train one pooled
 # "pantissue" CellViT head on the sthelar_full label vocabulary.
 #
-# Why the two phases:
-#   * `kurtorank annotate` requires a concrete --tissue-type (breast, lung, ...);
-#     it does NOT accept "pantissue", so we annotate each tissue in a loop.
-#   * kurtorank does not emit celltype_assignment_sthelar_full_label.csv, so we
-#     derive it from each sample's celltype_assignment_subtype.csv before the
-#     `transfer` stage reads it (task=sthelar_full).
+# Why the phases are still split:
+#   * The annotate stage now derives each sample's --tissue-type from its own
+#     folder, so `--tissue pantissue` annotates fine in one pass; the loop below
+#     is kept only to annotate tissue-by-tissue for readable progress/logs.
+#   * kurtorank emits celltype_assignment_sthelar_full_label.csv itself now, so
+#     Phase 2 is a backfill for samples annotated before that change.
 #   * A symlink farm (heart excluded) lets the pooled run use --tissue pantissue
 #     so the model/report land cleanly under models/pantissue/.
 #

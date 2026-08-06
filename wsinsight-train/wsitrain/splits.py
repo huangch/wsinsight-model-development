@@ -49,10 +49,26 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
     rng = random.Random(seed)
 
     if by_slide and len(slide_names) >= 2:
-        shuffled = list(slide_names)
-        rng.shuffle(shuffled)
-        n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
-        val_g, train_g = set(shuffled[:n_val]), set(shuffled[n_val:])
+        # Hold out slides tissue by tissue, and never from a tissue that has only
+        # one slide: an unstratified draw turns those into leave-tissue-out cases
+        # the head cannot possibly score on.
+        by_tissue: dict[str, list[str]] = defaultdict(list)
+        for g in slide_names:
+            by_tissue[g.split("__", 1)[0]].append(g)
+        val_g: set[str] = set()
+        for _tissue, names in sorted(by_tissue.items()):
+            if len(names) < 2:
+                continue
+            shuffled = list(names)
+            rng.shuffle(shuffled)
+            n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
+            val_g.update(shuffled[:n_val])
+        if not val_g:                      # every tissue has a single slide
+            shuffled = list(slide_names)
+            rng.shuffle(shuffled)
+            n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
+            val_g = set(shuffled[:n_val])
+        train_g = set(slide_names) - val_g
         return SplitResult(
             train=sorted(t for g in train_g for t in slides[g]),
             val=sorted(t for g in val_g for t in slides[g]),

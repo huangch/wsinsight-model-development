@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Full-cycle pan-tissue training: annotate (kurtorank markers-v5, STHELAR label)
-# -> segment -> transfer -> tile -> split -> train -> validate -> export,
-# pooling EVERY discovered tissue into one head. Includes auto-tune and
-# cellpose OOM guards.
+# Full-cycle pan-tissue training: annotate -> segment -> transfer -> tile ->
+# split -> train -> validate -> export -> report, pooling EVERY discovered
+# tissue into one head. Includes auto-tune and cellpose OOM guards.
 #
-# Usage: bash scripts/train_pantissue_v2.sh [input_dir]
-# Env:   set ENVBIN to a conda env bin with wsitrain+cellpose+kurtorank+torch.
+# Usage: bash scripts/train_pantissue.sh [input_dir] [output_dir]
+# Env:   TASK (label space, default pantissue), TUNE, BY_SLIDE, CP_BATCH, CP_FLOW;
+#        ENVBIN = conda env bin with wsitrain+cellpose+kurtorank+torch.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -21,23 +21,32 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
 mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 
 INPUT="${1:-$ROOT/data/xenium}"
-TASK="${TASK:-pannuke}"                                 # PanNuke label space (transfer appends _label.csv)
-OUT="$ROOT/models"                                   # all run outputs under models/
+OUT="${2:-$ROOT/models}"                             # manifest.json is per --output, so keep scopes apart
+TASK="${TASK:-pantissue}"                            # transfer appends _label.csv
+TUNE="${TUNE:-6}"
+BY_SLIDE="${BY_SLIDE:-true}"                         # slide-level holdout; false = tile-level split
+
+# by_slide has no CLI flag, so it goes through a --config override file.
+CFG="$(mktemp -t wsitrain-pantissue-XXXXXX.yaml)"
+trap 'rm -f "$CFG"' EXIT
+printf 'by_slide: %s\n' "$BY_SLIDE" > "$CFG"
 
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
-wsitrain check --input "$INPUT" --tissue "pantissue" || true
+wsitrain check --input "$INPUT" --tissue pantissue || true
 
-echo "== full cycle (pantissue) =="
+echo "== full cycle (pantissue, task=$TASK, by_slide=$BY_SLIDE, tune=$TUNE) =="
 wsitrain run \
   --input "$INPUT" \
-  --tissue "pantissue" \
+  --tissue pantissue \
   --task "$TASK" \
+  --config "$CFG" \
   --segmenter cellpose \
   --cellpose-batch-size "${CP_BATCH:-4}" \
   --cellpose-flow-threshold "${CP_FLOW:-0}" \
   --transform affine+bspline \
   --output "$OUT" \
-  --from annotate --to export \
-  --tune 6
+  --from annotate --to report \
+  --tune "$TUNE" \
+  --gpus auto
 
 echo "Done. Head + report under: $OUT/models/pantissue/  +  $OUT/report/pantissue/"

@@ -1,10 +1,9 @@
 """Derive celltype_assignment_sthelar_full_label.csv from each sample's
 celltype_assignment_subtype.csv using the markers-v6.csv crosswalk.
 
-kurtorank annotate writes per-cluster assignment CSVs for the subtype, major,
-pannuke_label, hne_type, hne_label and pantissue_label vocabularies, but NOT
-the STHELAR label space. wsitrain's `transfer` stage (task=sthelar_full) reads
-`celltype_assignment_sthelar_full_label.csv`, so this script produces it.
+`kurtorank annotate` now writes the STHELAR label CSVs itself, so this script is
+only needed to backfill samples annotated before that change (re-running
+annotate on them would be far slower).
 
 The per-cluster `subtype` -> `sthelar_full_label` mapping is 1:1 in
 markers-v6.csv (unlike hne_label, which fans out for lymphocyte /

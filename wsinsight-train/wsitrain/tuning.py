@@ -16,18 +16,8 @@ DROP_STEP = 0.05
 LEVERS = ("weight", "drop", "lr")
 
 
-def read_macro_f1(run_dir: Path) -> float | None:
-    # Trainer writes val_results/scores.json with key "F1-Score/Validation"
-    scores = run_dir / "val_results" / "scores.json"
-    if scores.exists():
-        d = json.loads(scores.read_text())
-        return d.get("F1-Score/Validation")
-    return None
-
-
-def weakest_class(run_dir: Path) -> int | None:
-    # Trainer writes val_results/predictions.pt + gt.pt; derive per-class F1
-    # from those tensors rather than a classification_report JSON.
+def _per_class_f1(run_dir: Path):
+    """(class ids, per-class F1) from the trainer's raw validation tensors."""
     pred_pt = run_dir / "val_results" / "predictions.pt"
     gt_pt   = run_dir / "val_results" / "gt.pt"
     if not pred_pt.exists() or not gt_pt.exists():
@@ -38,11 +28,32 @@ def weakest_class(run_dir: Path) -> int | None:
         preds = torch.load(pred_pt, map_location="cpu").numpy()
         gts   = torch.load(gt_pt,   map_location="cpu").numpy()
         classes = sorted(set(gts.tolist()))
-        per_class = f1_score(gts, preds, labels=classes, average=None, zero_division=0)
-        c = int(per_class.argmin())
-        return c if per_class[c] < WEAK_F1 else None
+        return classes, f1_score(gts, preds, labels=classes, average=None, zero_division=0)
     except Exception:
         return None
+
+
+def read_macro_f1(run_dir: Path) -> float | None:
+    # scores.json's "F1-Score/Validation" is micro-F1 (== accuracy), which the
+    # majority class dominates; derive the true macro average when possible.
+    res = _per_class_f1(run_dir)
+    if res is not None and len(res[1]):
+        return float(res[1].mean())
+    scores = run_dir / "val_results" / "scores.json"
+    if scores.exists():
+        d = json.loads(scores.read_text())
+        return d.get("F1-Score/Validation")
+    return None
+
+
+def weakest_class(run_dir: Path) -> int | None:
+    res = _per_class_f1(run_dir)
+    if res is None:
+        return None
+    classes, per_class = res
+    i = int(per_class.argmin())
+    # Index back through `classes`: absent classes shift positional indices.
+    return int(classes[i]) if per_class[i] < WEAK_F1 else None
 
 
 def apply_lever(lever, weights, drop, lr, weak):

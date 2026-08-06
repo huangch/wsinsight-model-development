@@ -12,6 +12,8 @@ from typing import Any
 
 from .. import paths, splits as splits_mod, weights as weights_mod
 
+CONFUSION_CMAP = "Blues"
+
 
 def annotate(cfg, samples, out: Path) -> dict[str, Any]:
     """KurtoRank annotate over every sample's outs/ → celltype_assignment CSV."""
@@ -26,19 +28,19 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
 
     done = []
     for s in samples:
-        pattern = f"celltype_assignment_*_label.csv"
-        existing = list(Path(s.outs).glob(pattern))
-        if existing:
-            done.append(existing[0].name)
+        # Must be the current task's vocabulary; another task's CSV is not a substitute.
+        wanted = f"celltype_assignment_{cfg.task}_label.csv"
+        if (Path(s.outs) / wanted).exists():
+            done.append(wanted)
             continue
+        # kurtorank needs a concrete tissue; cfg.tissue may be "pantissue" or a comma list.
         cmd = [exe, "annotate", "--xenium-dir", str(s.outs),
-               "--tissue-type", cfg.tissue, "--output-dir", str(s.outs),
+               "--tissue-type", s.tissue, "--output-dir", str(s.outs),
                "--use-graphclust", "--use-top-k-markers", str(cfg.top_k_markers)]
         if cfg.markers_csv:
             cmd += ["--markers-csv", str(cfg.markers_csv)]
         subprocess.run(cmd, check=True)
-        hits = list(Path(s.outs).glob(pattern))
-        done.append(hits[0].name if hits else "MISSING")
+        done.append(wanted if (Path(s.outs) / wanted).exists() else "MISSING")
     return {"n_samples": len(samples), "assignments": done}
 
 
@@ -46,6 +48,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     """Segment nuclei on each H&E (Cellpose/StarDist) → instance masks .npy."""
     import numpy as np
     import tifffile
+    import torch
 
     from ..segment import get_segmenter
 
@@ -66,6 +69,9 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
         np.save(dst, mask)
         counts[s.sample_id] = int(mask.max())
         del he, mask  # free large arrays before next slide
+        # Cellpose leaves tens of GB reserved; without this the next slide OOMs.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     return {"segmenter": seg.name, "nuclei_per_sample": counts}
 
 
@@ -278,9 +284,11 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
         cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-9)
 
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-        for ax, mat, title in zip(axes, [cm, cm_norm], ["Counts", "Normalised"]):
+        for ax, mat, title, fmt in zip(axes, [cm, cm_norm],
+                                       ["Counts", "Normalised"], ["d", ".2f"]):
             disp = ConfusionMatrixDisplay(confusion_matrix=mat, display_labels=class_names)
-            disp.plot(ax=ax, colorbar=False, xticks_rotation="vertical")
+            disp.plot(ax=ax, colorbar=False, xticks_rotation="vertical",
+                      cmap=CONFUSION_CMAP, values_format=fmt)
             ax.set_title(title)
         fig.tight_layout()
         fig.savefig(rd / "confusion_matrix.png", dpi=150)

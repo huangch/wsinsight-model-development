@@ -1628,6 +1628,12 @@ def run_kurtorank(
     cluster_to_lcp_label = final_df.groupby("cluster")["assigned_cell_lcp_label"].first().to_dict()
     adata.obs["cell_lcp_label"] = adata.obs[primary_cluster].map(cluster_to_lcp_label)
 
+    for _sthelar_col in ("sthelar_full_type", "sthelar_full_label",
+                         "sthelar_coarse_type", "sthelar_coarse_label",
+                         "sthelar_cancer_normal_type", "sthelar_cancer_normal_label"):
+        _mapping = final_df.groupby("cluster")[f"assigned_cell_{_sthelar_col}"].first().to_dict()
+        adata.obs[f"cell_{_sthelar_col}"] = adata.obs[primary_cluster].map(_mapping)
+
     cancer_associated = final_df.groupby("cluster")["cancer_associated"].first().to_dict()
     adata.obs["cancer_associated"] = adata.obs[primary_cluster].map(cancer_associated)
 
@@ -2475,6 +2481,23 @@ def visualize_annotation(
     save_fig(fig, out_dir, "cluster_vs_celltype_heatmaps.png")
 
 
+def _backfill_sthelar_obs(adata: ad.AnnData, primary_cluster: str) -> None:
+    """Add cell_sthelar_* columns to h5ad files written before they were stored."""
+    results = adata.uns.get("kurtorank_results")
+    if results is None:
+        return
+    results = pd.DataFrame(results)
+    keys = adata.obs[primary_cluster].astype(str)
+    for col in ("sthelar_full_type", "sthelar_full_label",
+                "sthelar_coarse_type", "sthelar_coarse_label",
+                "sthelar_cancer_normal_type", "sthelar_cancer_normal_label"):
+        src = f"assigned_cell_{col}"
+        if f"cell_{col}" in adata.obs.columns or src not in results.columns:
+            continue
+        mapping = {str(k): v for k, v in results.groupby("cluster")[src].first().items()}
+        adata.obs[f"cell_{col}"] = keys.map(mapping)
+
+
 def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     cluster_col = None
     for candidate in [
@@ -2575,6 +2598,28 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
             }
         ).set_index("classification")
 
+    def _cluster_assignment(obs_col: str) -> pd.DataFrame | None:
+        if obs_col not in adata.obs.columns:
+            return None
+        data = (
+            adata.obs.groupby(cluster_col)[obs_col]
+            .value_counts(normalize=True)
+            .unstack(fill_value=0)
+        )
+        return pd.DataFrame(
+            {
+                "classification": data.idxmax(axis=1).index.tolist(),
+                "cell_type": data.idxmax(axis=1).tolist(),
+            }
+        ).set_index("classification")
+
+    # Keys double as wsitrain --task names: it reads celltype_assignment_<task>_label.csv.
+    sthelar_assignments = {
+        "sthelar_full": _cluster_assignment("cell_sthelar_full_label"),
+        "sthelar_coarse": _cluster_assignment("cell_sthelar_coarse_label"),
+        "sthelar_cancer_normal": _cluster_assignment("cell_sthelar_cancer_normal_label"),
+    }
+
     out_sub = out_dir / "celltype_assignment_subtype.csv"
     out_major = out_dir / "celltype_assignment_major.csv"
     out_pannuke = out_dir / "celltype_assignment_pannuke_label.csv"
@@ -2600,6 +2645,13 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     logger.info(f"Saved QuST pantissue label assignment: {out_pantissue}")
     if lcp_label_assignment is not None:
         logger.info(f"Saved QuST lcp label assignment: {out_lcp}")
+
+    for task, assignment in sthelar_assignments.items():
+        if assignment is None:
+            continue
+        dst = out_dir / f"celltype_assignment_{task}_label.csv"
+        assignment.to_csv(dst)
+        logger.info(f"Saved QuST {task} label assignment: {dst}")
 
 
 # ---------------------- CLI ----------------------
@@ -2833,6 +2885,10 @@ def main(
         output_dir / "celltype_assignment_pannuke_label.csv",
         output_dir / "celltype_assignment_hne_type.csv",
         output_dir / "celltype_assignment_hne_label.csv",
+        output_dir / "celltype_assignment_pantissue_label.csv",
+        output_dir / "celltype_assignment_sthelar_full_label.csv",
+        output_dir / "celltype_assignment_sthelar_coarse_label.csv",
+        output_dir / "celltype_assignment_sthelar_cancer_normal_label.csv",
     ]
 
     annotated_exists = annotated_path.exists()
@@ -2866,6 +2922,7 @@ def main(
                         "Annotated dataset lacks primary cluster information; rerun with --overwrite to rebuild."
                     )
 
+            _backfill_sthelar_obs(adata, primary_cluster)
             export_qust_csvs(adata, xenium_dir, output_dir)
             visualize_annotation(adata, primary_cluster, generate_plots, output_dir)
             logger.info("Finished regenerating outputs from existing annotated dataset.")

@@ -20,13 +20,13 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-  # anndata pinned to <0.11 to allow co-installation with wsinsight env (numpy<2).
-  # Revert to >=0.12,<0.13 if reading 0.12-format h5ad raises IORegistryError.
-  "anndata>=0.9,<0.11",
+  # squidpy>=1.6.3 and spatialdata-io>=0.6 import anndata.io, which needs anndata>=0.11.
+  # numpy stays <2 for the shared wsinsight env (cellpose/torch).
+  "anndata>=0.11,<0.12",
   "scanpy<1.11",
   "squidpy<1.7",
-  "spatialdata<0.5",
-  "spatialdata-io<0.7",
+  "spatialdata>=0.4,<0.5",
+  "spatialdata-io>=0.6,<0.7",
   "torch",
   "numpy<2.0.0",
   "zarr<3",

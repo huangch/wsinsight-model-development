@@ -33,7 +33,7 @@ wsitrain run \
   --segmenter cellpose \
   --cellpose-batch-size "${CP_BATCH:-4}" \
   --cellpose-flow-threshold "${CP_FLOW:-0}" \
-  --transform affine+bspline \
+  --transform affine \
   --output "$OUT" \
   --tune "$TUNE" \
   --gpus auto

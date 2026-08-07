@@ -20,6 +20,8 @@ _INVALIDATES: dict[str, str] = {
     "diameter": "segment",
     "cellpose_flow_threshold": "segment",
     "transform": "transfer",
+    "match_radius_px": "transfer",
+    "min_match_rate": "transfer",
     "tile_px": "tile",
     "mpp": "tile",
     "min_cells": "tile",

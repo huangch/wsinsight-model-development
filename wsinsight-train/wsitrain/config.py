@@ -31,7 +31,12 @@ class RunConfig:
     cellpose_flow_threshold: float = 0.0 # 0 = skip GPU flow QC (avoids WSI OOM)
 
     # registration transform
-    transform: str = "affine+bspline"    # affine | affine+bspline | none
+    # bUnwarpJ's elastic field is fitted on 4x-downsampled images with 8 intervals;
+    # measured against Cellpose nuclei it costs 10-19 points of hit rate versus the
+    # SIFT affine alone on every slide tested, so affine is the default.
+    transform: str = "affine"            # affine | affine+bspline | none
+    match_radius_px: int = 4             # search window for the nucleus lookup
+    min_match_rate: float = 0.35         # drop slides whose registration is unusable
 
     # tiling (must match the historical export contract)
     tile_px: int = 1024

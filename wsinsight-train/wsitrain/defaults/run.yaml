@@ -8,7 +8,14 @@ cellpose_model: cpsam
 diameter: null               # null => auto
 cellpose_batch_size: 8       # tile batch; lower (4/2) if GPU OOMs
 cellpose_flow_threshold: 0.0 # 0 = skip GPU flow QC (avoids whole-slide OOM)
-transform: affine+bspline    # affine | affine+bspline | none
+
+# registration transform
+# affine+bspline measured 10-19 points worse than affine on every slide tested:
+# the bUnwarpJ field is fitted at 4x downsampling with 8 intervals and only adds
+# jitter on top of an already sub-nuclear SIFT affine.
+transform: affine            # affine | affine+bspline | none
+match_radius_px: 4           # search window for the nucleus lookup (0 = exact pixel)
+min_match_rate: 0.35         # slides below this are dropped: their labels are noise
 
 # tiling (matches the established CellViT tile contract)
 tile_px: 1024

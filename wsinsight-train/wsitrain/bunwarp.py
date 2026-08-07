@@ -124,34 +124,39 @@ def _bspline(axy: np.ndarray, intervals: int, cx: np.ndarray, cy: np.ndarray,
     axy      : affine output (target px at the TargetScale level).
     denom_w/h: (round(W_target / TargetScale) - 1) / (round(H_target / TargetScale) - 1),
                i.e. the target lattice extent at the TargetScale level (per qust).
+
+    Evaluated at sub-pixel precision: qust rounds to integer pixels first, but
+    that rounding happens at the TargetScale level, so it becomes +-TargetScale/2
+    full-resolution pixels -- roughly half a nucleus, which loses ~15% of the
+    coordinate transfers. Control points are clamped at the lattice border rather
+    than dropped, so the B-spline weights always sum to 1.
     """
-    out = np.empty_like(axy)
     n3 = intervals + 3
-    for i in range(axy.shape[0]):
-        # qust rounds the affine output to integer pixels before indexing the lattice
-        bu = round(float(axy[i, 0]))
-        bv = round(float(axy[i, 1]))
-        u = bu * intervals / denom_w + 1.0
-        v = bv * intervals / denom_h + 1.0
-        iu, iv = int(np.floor(u)), int(np.floor(v))
-        sx = sy = 0.0
-        for l in range(iv - 1, iv + 3):
-            if 0 <= l < n3:
-                wv = _b3(v - l)
-                for k in range(iu - 1, iu + 3):
-                    if 0 <= k < n3:
-                        b = _b3(u - k) * wv
-                        sx += cx[l, k] * b
-                        sy += cy[l, k] * b
-        out[i] = (sx, sy)
-    return out
+    u = axy[:, 0] * intervals / denom_w + 1.0
+    v = axy[:, 1] * intervals / denom_h + 1.0
+    iu = np.floor(u).astype(np.int64)
+    iv = np.floor(v).astype(np.int64)
+    sx = np.zeros(len(u))
+    sy = np.zeros(len(u))
+    for dl in (-1, 0, 1, 2):
+        lc = np.clip(iv + dl, 0, n3 - 1)
+        wv = _b3(v - (iv + dl))
+        for dk in (-1, 0, 1, 2):
+            kc = np.clip(iu + dk, 0, n3 - 1)
+            b = _b3(u - (iu + dk)) * wv
+            sx += cx[lc, kc] * b
+            sy += cy[lc, kc] * b
+    return np.stack([sx, sy], 1)
 
 
 def _b3(t):
-    t = abs(t)
-    if t < 1: return 2/3 - t*t + 0.5*t**3
-    if t < 2: return ((2 - t) ** 3) / 6
-    return 0.0
+    t = np.abs(np.asarray(t, float))
+    out = np.zeros_like(t)
+    m1 = t < 1
+    m2 = (t >= 1) & (t < 2)
+    out[m1] = 2 / 3 - t[m1] ** 2 + 0.5 * t[m1] ** 3
+    out[m2] = ((2 - t[m2]) ** 3) / 6
+    return out
 
 
 def map_cells(xy_um, params, elastic=None, mode="affine+bspline", target_wh=None):

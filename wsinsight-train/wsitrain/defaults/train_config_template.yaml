@@ -11,8 +11,10 @@ gpu: 0
 data:
   dataset: DetectionDataset
   dataset_path: ${TISSUE_ROOT}
-  normalize_stains_train: false
-  normalize_stains_val: false
+  # Pan-tissue slides come from many labs; without this the backbone spends
+  # capacity on the H&E colour signature of each source.
+  normalize_stains_train: true
+  normalize_stains_val: true
   num_classes: ${NUM_CLASSES}
   train_filelist: ${TISSUE_ROOT}/splits/${FOLD}/train.csv
   val_filelist: ${TISSUE_ROOT}/splits/${FOLD}/val.csv
@@ -35,7 +37,9 @@ training:
   early_stopping_patience: 5
   mixed_precision: true
   eval_every: 1
-  weighted_sampling: true
+  # weight_list already reweights the loss; sampling on top of it corrects the
+  # imbalance twice and starves the majority classes.
+  weighted_sampling: false
   weight_list: ${WEIGHTS}
   scheduler:
     scheduler_type: exponential

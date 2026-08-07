@@ -46,6 +46,8 @@ def _cmd_run(args) -> int:
                        overrides={"segmenter": args.segmenter, "gpus": args.gpus,
                                   "transform": args.transform, "tune": args.tune,
                                   "task": args.task,
+                                  "match_radius_px": args.match_radius_px,
+                                  "min_match_rate": args.min_match_rate,
                                   "cellpose_batch_size": args.cellpose_batch_size,
                                   "cellpose_flow_threshold": args.cellpose_flow_threshold})
     from . import dag
@@ -74,6 +76,10 @@ def main(argv=None) -> int:
     r.add_argument("--cellpose-flow-threshold", type=float, default=None,
                    help="cellpose flow QC; 0 skips GPU flow check (avoids WSI OOM)")
     r.add_argument("--transform", default=None, choices=["affine", "affine+bspline", "none"])
+    r.add_argument("--match-radius-px", type=int, default=None,
+                   help="nucleus lookup search radius in H&E px (0 = exact pixel)")
+    r.add_argument("--min-match-rate", type=float, default=None,
+                   help="drop slides whose registration matches fewer than this fraction")
     r.add_argument("--gpus", default=None)
     r.add_argument("--tune", type=int, default=None, help="auto-tune iterations (0=off)")
     r.add_argument("--task", default=None)

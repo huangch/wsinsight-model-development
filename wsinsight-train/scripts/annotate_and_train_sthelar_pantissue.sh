@@ -101,7 +101,7 @@ wsitrain run \
   --task "$TASK" \
   --config "$CFG" \
   --segmenter cellpose \
-  --transform affine+bspline \
+  --transform affine \
   --output "$OUT" \
   --from segment --to export
 

@@ -15,6 +15,30 @@ from .. import paths, splits as splits_mod, weights as weights_mod
 CONFUSION_CMAP = "Blues"
 
 
+def read_he_rgb(path) -> "Any":
+    """Read a WSI as (H, W, 3) uint8 regardless of how the vendor stored the axes.
+
+    Several Xenium H&E exports are CYX, so ``shape[:2]`` silently yields (3, H).
+    """
+    import numpy as np
+    import tifffile
+
+    with tifffile.TiffFile(str(path)) as tf:
+        ser = tf.series[0]
+        axes = ser.axes
+        arr = ser.asarray()
+    if axes.startswith("C") or axes.startswith("S"):
+        arr = np.moveaxis(arr, 0, -1)
+    arr = np.atleast_3d(arr)[..., :3]
+    if arr.shape[-1] == 1:
+        arr = np.repeat(arr, 3, -1)
+    if arr.dtype != np.uint8:
+        info = np.iinfo(arr.dtype) if np.issubdtype(arr.dtype, np.integer) else None
+        hi = float(info.max) if info else float(arr.max() or 1)
+        arr = (arr.astype(np.float32) / hi * 255).clip(0, 255).astype(np.uint8)
+    return np.ascontiguousarray(arr)
+
+
 def annotate(cfg, samples, out: Path) -> dict[str, Any]:
     """KurtoRank annotate over every sample's outs/ → celltype_assignment CSV."""
     import shutil
@@ -47,7 +71,6 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
 def segment(cfg, samples, out: Path) -> dict[str, Any]:
     """Segment nuclei on each H&E (Cellpose/StarDist) → instance masks .npy."""
     import numpy as np
-    import tifffile
     import torch
 
     from ..segment import get_segmenter
@@ -64,7 +87,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
         if dst.exists():
             counts[s.sample_id] = int(np.load(dst).max())
             continue
-        he = tifffile.imread(str(s.he))
+        he = read_he_rgb(s.he)
         mask = seg.segment(he, mpp=cfg.mpp)
         np.save(dst, mask)
         counts[s.sample_id] = int(mask.max())
@@ -94,10 +117,31 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     def _per_cell(s) -> pd.DataFrame:
         outs = Path(s.outs)
         cells = pd.read_parquet(outs / "cells.parquet")[["cell_id", "x_centroid", "y_centroid"]]
+        # Some Xenium releases store cell_id as bytes; clusters.csv is always text.
+        cells["cell_id"] = cells["cell_id"].map(
+            lambda v: v.decode() if isinstance(v, (bytes, bytearray)) else v)
         assign = pd.read_csv(outs / f"celltype_assignment_{cfg.task}_label.csv")
         cl = pd.read_csv(outs / "analysis/clustering/gene_expression_graphclust/clusters.csv")
         cl = cl.rename(columns={"Barcode": "cell_id", "Cluster": "classification"})
-        m = cells.merge(cl, on="cell_id").merge(assign, on="classification")
+        m = cells.merge(cl, on="cell_id")
+        if len(m) < 0.5 * len(cells):
+            raise RuntimeError(
+                f"{s.sample_id}: only {len(m)}/{len(cells)} cells matched clusters.csv "
+                f"on cell_id — the barcode keys do not line up.")
+        n_pre = len(m)
+        m = m.merge(assign, on="classification")
+        # The join key is a cluster *number*. A few unassigned tail clusters are
+        # normal (kurtorank skips tiny ones); losing a large share instead means
+        # clustering was rerun and the numbers no longer mean the same thing.
+        lost = 1 - len(m) / max(n_pre, 1)
+        if lost > 0.05:
+            orphan = sorted(set(cl["classification"]) - set(assign["classification"]))
+            raise RuntimeError(
+                f"{s.sample_id}: {lost:.1%} of cells fall in clusters {orphan} with no "
+                f"entry in celltype_assignment_{cfg.task}_label.csv. The assignment is "
+                f"stale relative to clusters.csv — rerun `wsitrain run --from annotate`.")
+        if lost:
+            print(f"[transfer] {s.sample_id}: {lost:.2%} of cells in unassigned clusters")
         return m.rename(columns={"x_centroid": "x_um", "y_centroid": "y_um", "cell_type": "label"})
 
     def _to_px(s, df, mask):
@@ -114,9 +158,31 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
                            elastic if elastic.exists() else None, cfg.transform,
                            target_wh=(mask.shape[1], mask.shape[0]))
             xpx, ypx = xy[:, 0], xy[:, 1]
-        xpx = np.clip(np.round(xpx).astype(int), 0, mask.shape[1] - 1)
-        ypx = np.clip(np.round(ypx).astype(int), 0, mask.shape[0] - 1)
-        return xpx, ypx
+        return np.round(xpx).astype(np.int64), np.round(ypx).astype(np.int64)
+
+    def _lookup(mask, xpx, ypx, radius: int):
+        """Nucleus id under each point, searching outward to ``radius``.
+
+        Out-of-bounds points are reported as 0 rather than clipped onto the
+        border, which would manufacture matches along the slide edge.
+        """
+        h, w = mask.shape
+        r = max(int(radius), 0)
+        inb = (xpx >= r) & (xpx < w - r) & (ypx >= r) & (ypx < h - r)
+        nid = np.zeros(len(xpx), mask.dtype)
+        xi, yi = xpx[inb], ypx[inb]
+        got = mask[yi, xi]
+        offsets = [(0, 0)] if r == 0 else sorted(
+            ((dy, dx) for dy in range(-r, r + 1) for dx in range(-r, r + 1)
+             if dy * dy + dx * dx <= r * r and (dy or dx)),
+            key=lambda t: t[0] ** 2 + t[1] ** 2)
+        for dy, dx in offsets:                      # nearest ring first
+            todo = got == 0
+            if not todo.any():
+                break
+            got[todo] = mask[yi[todo] + dy, xi[todo] + dx]
+        nid[inb] = got
+        return nid
 
     # Pass 1: label vocabulary across samples.
     from tqdm import tqdm
@@ -131,17 +197,37 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     paths.label_map_path(out, cfg.tissue).write_text(
         "\n".join(f'{i}: "{n}"' for i, n in label_map.items()) + "\n")
 
-    counts = {}
+    counts, rates, dropped = {}, {}, []
     for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
         df = frames.pop(s.sample_id)  # release each frame as we go
         mask = np.load(mask_dir / f"{s.sample_id}.npy")
         xpx, ypx = _to_px(s, df, mask)
-        df = df.assign(x_px=xpx, y_px=ypx, class_int=df["label"].map(name_to_int))
-        df = df[mask[ypx, xpx] > 0]
+        nid = _lookup(mask, xpx, ypx, cfg.match_radius_px)
+        df = df.assign(x_px=xpx, y_px=ypx, nucleus_id=nid,
+                       class_int=df["label"].map(name_to_int))
+        df = df[df.nucleus_id > 0]
+        # Several Xenium cells can land on one nucleus with conflicting labels;
+        # an arbitrary winner would teach the model contradictions.
+        df = df.drop_duplicates("nucleus_id", keep=False)
+        rate = len(df) / max(len(nid), 1)
+        rates[s.sample_id] = round(rate, 4)
+        if rate < cfg.min_match_rate:
+            # Below this the surviving matches are mostly chance collisions with
+            # whatever nucleus happens to sit under a mis-registered point.
+            dropped.append(s.sample_id)
+            print(f"[transfer] DROP {s.sample_id}: match rate {rate:.1%} "
+                  f"< min_match_rate {cfg.min_match_rate:.0%}")
+            del mask, df
+            continue
         df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)
         counts[s.sample_id] = len(df)
         del mask, df  # free mask + joined frame before next slide
-    return {"n_classes": len(label_map), "cells_per_sample": counts}
+    if not counts:
+        raise RuntimeError("every slide fell below min_match_rate; registration is broken")
+    print(f"[transfer] kept {len(counts)}/{len(samples)} slides, "
+          f"median match rate {float(np.median(list(rates.values()))):.1%}")
+    return {"n_classes": len(label_map), "cells_per_sample": counts,
+            "match_rate": rates, "dropped_slides": dropped}
 
 
 
@@ -156,7 +242,6 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     """
     import numpy as np
     import pandas as pd
-    import tifffile
     from PIL import Image
 
     nuc_dir = out / "nuclei" / cfg.tissue
@@ -168,20 +253,23 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     written = 0
     from tqdm import tqdm
     for s in tqdm(samples, desc="tile", unit="slide", ascii=" =", dynamic_ncols=True):
-        he = tifffile.imread(str(s.he))
-        cells = pd.read_csv(nuc_dir / f"{s.sample_id}.csv")
+        csv = nuc_dir / f"{s.sample_id}.csv"
+        if not csv.exists():        # dropped by the transfer QC
+            continue
+        he = read_he_rgb(s.he)
+        cells = pd.read_csv(csv)
         h, w = he.shape[:2]
         for ti, y0 in enumerate(range(0, h - cfg.tile_px + 1, stride)):
             for tj, x0 in enumerate(range(0, w - cfg.tile_px + 1, stride)):
                 patch = he[y0:y0 + cfg.tile_px, x0:x0 + cfg.tile_px]
-                if float(np.asarray(patch).mean()) > cfg.bg_thresh:
+                if float(patch.mean()) > cfg.bg_thresh:
                     continue
                 sub = cells[(cells.x_px >= x0) & (cells.x_px < x0 + cfg.tile_px) &
                             (cells.y_px >= y0) & (cells.y_px < y0 + cfg.tile_px)]
                 if len(sub) < cfg.min_cells:
                     continue
                 stem = f"{s.sample_id}_tile_{ti * 10000 + tj:05d}"
-                Image.fromarray(np.asarray(patch)[..., :3].astype("uint8")).save(img_dir / f"{stem}.png")
+                Image.fromarray(patch).save(img_dir / f"{stem}.png")
                 sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
                     lab_dir / f"{stem}.csv", header=False, index=False)
                 written += 1

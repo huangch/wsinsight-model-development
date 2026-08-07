@@ -114,12 +114,40 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     nuc_dir = out / "nuclei" / cfg.tissue
     nuc_dir.mkdir(parents=True, exist_ok=True)
 
+    def _nucleus_xy(outs: Path, cells: pd.DataFrame) -> pd.DataFrame:
+        """Replace the cell centroid with the nucleus centroid where available.
+
+        x_centroid/y_centroid is the centroid of the *cell*. In tissues where the
+        nucleus is a small part of the cell (heart 5%, liver 15%) that point sits
+        in cytoplasm, and an exact nucleus lookup fails for reasons unrelated to
+        registration -- heart goes from 19% to 73% matched with this swap.
+        """
+        nbp = outs / "nucleus_boundaries.parquet"
+        if not nbp.exists():
+            return cells
+        nb = pd.read_parquet(nbp)
+        nb.columns = [c.lower() for c in nb.columns]
+        xs = [c for c in nb.columns if c.endswith("vertex_x")]
+        ys = [c for c in nb.columns if c.endswith("vertex_y")]
+        if not (xs and ys and "cell_id" in nb.columns):
+            return cells
+        nb["cell_id"] = nb["cell_id"].map(
+            lambda v: v.decode() if isinstance(v, (bytes, bytearray)) else v)
+        nuc = nb.groupby("cell_id")[[xs[0], ys[0]]].mean()
+        nuc.columns = ["nx", "ny"]
+        out = cells.join(nuc, on="cell_id")
+        keep = out["nx"].notna()
+        out.loc[keep, "x_centroid"] = out.loc[keep, "nx"]
+        out.loc[keep, "y_centroid"] = out.loc[keep, "ny"]
+        return out.drop(columns=["nx", "ny"])
+
     def _per_cell(s) -> pd.DataFrame:
         outs = Path(s.outs)
         cells = pd.read_parquet(outs / "cells.parquet")[["cell_id", "x_centroid", "y_centroid"]]
         # Some Xenium releases store cell_id as bytes; clusters.csv is always text.
         cells["cell_id"] = cells["cell_id"].map(
             lambda v: v.decode() if isinstance(v, (bytes, bytearray)) else v)
+        cells = _nucleus_xy(outs, cells)
         assign = pd.read_csv(outs / f"celltype_assignment_{cfg.task}_label.csv")
         cl = pd.read_csv(outs / "analysis/clustering/gene_expression_graphclust/clusters.csv")
         cl = cl.rename(columns={"Barcode": "cell_id", "Cluster": "classification"})

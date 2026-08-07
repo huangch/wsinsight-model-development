@@ -1,0 +1,91 @@
+=== 1. tile PNGs (25532 total) ===
+tile                                         shape            dtype     min   max    mean
+cervix__FFPE Human Cervical Cancer with 5K   (1024, 1024, 3)  uint8       0   255   183.1
+colorectal__Human Colon Preview Data (Xeni   (1024, 1024, 3)  uint8      37   247   179.5
+breast__FFPE Human Breast using the Entire   (1024, 1024, 3)  uint8       0   255   211.6
+ovary__FFPE Human Ovarian Cancer with 5K H   (1024, 1024, 3)  uint8       0   255   201.8
+tonsil__Human Tonsil Data with Xenium Huma   (1024, 1024, 3)  uint8       0   255   119.1
+brain__FFPE Human Brain Cancer Data with H   (1024, 1024, 3)  uint8       0   255   187.7
+breast__FFPE Human Breast with Custom Add-   (1024, 1024, 3)  uint8       0   255   200.9
+tonsil__Human Tonsil Data with Xenium Huma   (1024, 1024, 3)  uint8       0   255   176.0
+breast__FFPE Human Breast Cancer with 5K H   (1024, 1024, 3)  uint8       0   255   187.8
+bone__Human Bone and Bone Marrow Data with   (1024, 1024, 3)  uint8       0   255   176.2
+breast__FFPE Human Breast using the Entire   (1024, 1024, 3)  uint8       0   255   214.7
+liver__Human Liver Data with Xenium Human    (1024, 1024, 3)  uint8      10   252   215.8
+breast__FFPE Human Breast Cancer with 5K H   (1024, 1024, 3)  uint8       0   255   187.7
+breast__FFPE Human Breast Cancer with 5K H   (1024, 1024, 3)  uint8       0   255   181.2
+lung__Post-Xenium Technical Note: Xenium v   (1024, 1024, 3)  uint8       0   255   174.7
+cervix__FFPE Human Cervical Cancer with 5K   (1024, 1024, 3)  uint8       0   255   187.1
+prostate__Preview Data: FFPE Human Prostat   (1024, 1024, 3)  uint8       0   255   188.6
+breast__FFPE Human Breast using the Entire   (1024, 1024, 3)  uint8      29   255   212.0
+breast__FFPE Human Breast with Custom Add-   (1024, 1024, 3)  uint8       0   255   209.4
+breast__FFPE Human Breast using the Entire   (1024, 1024, 3)  uint8       0   255   212.6
+-> /workspace/wsinsight/wsinsight-model-development/models/diag/tiles_contact_sheet.png
+
+=== 2. image axes / mask density / transfer match rate ===
+slide                              series0 shape          axes   dtype       nuclei    xenium   matched      %
+bone__Human Bone and Bone Marrow   (37252, 11024, 3)      YXS    uint8       214480    225906    103190   45.7
+bone__Human Bone and Bone Marrow   (36523, 13762, 3)      YXS    uint8        71281     84518     14309   16.9
+bone__Human Bone and Bone Marrow   (36158, 34751, 3)      YXS    uint8        27148     33801      3932   11.6
+brain__FFPE Human Brain Cancer D   (58584, 38957, 3)      YXS    uint8       983714    816769    279674   34.2
+breast__FFPE Human Breast Cancer   (37433, 57382, 3)      YXS    uint8       540237    699110    187793   26.9
+breast__FFPE Human Breast using    (39621, 83300, 3)      YXS    uint8       665369    892966    195340   21.9
+breast__FFPE Human Breast using    (38710, 83300, 3)      YXS    uint8       669347    885523    201410   22.7
+breast__FFPE Human Breast with C   (38096, 42947, 3)      YXS    uint8       480809    574527    263674   45.9
+breast__FFPE Human Breast with C   (38096, 34537, 3)      YXS    uint8       289518    365604    160927   44.0
+breast__FFPE Human Breast with P   (3, 53738, 48376)      CYX    uint8       485700    574852    235195   40.9
+breast__FFPE Human Breast with P   (3, 41405, 48511)      CYX    uint8       289854    356746    120581   33.8
+breast__Xenium FFPE Human Breast   (3, 53833, 48441)      CYX    uint8       494002    576963         0    0.0
+cervix__FFPE Human Cervical Canc   (46545, 38219, 3)      YXS    uint8       732999    840387    201588   24.0
+colorectal__FFPE Human Colorecta   (40815, 21507, 3)      YXS    uint8       396053    388175    251474   64.8
+colorectal__Human Colon Preview    (43090, 26909, 3)      YXS    uint8       467443    587115    157402   26.8
+colorectal__Human Colon Preview    (77802, 53802, 3)      YXS    uint8       295624    270984     70036   25.8
+heart__Human Heart Data with Xen   (10645, 24544, 3)      YXS    uint8        21720     26366      3427   13.0
+kidney__Human Kidney Preview Dat   (27323, 8832, 3)       YXS    uint8        52897     56510      9494   16.8
+kidney__Human Kidney Preview Dat   (33427, 11949, 3)      YXS    uint8        85876     97560     18093   18.5
+kidney__Xenium In Situ Gene and    (60680, 24096, 3)      YXS    uint8       461437    465534    117211   25.2
+liver__Human Liver Data with Xen   (33795, 15404, 3)      YXS    uint8       140659    162628     62834   38.6
+liver__Human Liver Data with Xen   (42353, 28183, 3)      YXS    uint8       166293    239271     22613    9.5
+lung__FFPE Human Lung Cancer Dat   (39361, 15513, 3)      YXS    uint8       132794    161000     49732   30.9
+lung__Post-Xenium Technical Note   (43448, 25078, 3)      YXS    uint8       218478    278659     79646   28.6
+lung__Post-Xenium Technical Note   (43270, 26720, 3)      YXS    uint8       222303    278328    142889   51.3
+lung__Preview Data: FFPE Human L   (45087, 11580, 3)      YXS    uint8       147536    162254     57348   35.3
+lymph_node__Preview Data: FFPE H   (30987, 28915, 3)      YXS    uint8       749757    708983    524341   74.0
+ovary__FFPE Human Ovarian Cancer   (37330, 21806, 3)      YXS    uint8       226275    247636    158265   63.9
+ovary__FFPE Human Ovarian Cancer   (43993, 30918, 3)      YXS    uint8       354613    407124    192624   47.3
+pancreas__FFPE Human Pancreas wi   (27502, 14896, 3)      YXS    uint8       129977    140702     44981   32.0
+pancreas__FFPE Human Pancreatic    (41014, 19068, 3)      YXS    uint8       210227    235099     63215   26.9
+pancreas__Pancreatic Cancer with   (71883, 20562, 3)      YXS    uint8       190119    190965     66386   34.8
+prostate__Preview Data: FFPE Hum   (49976, 25002, 3)      YXS    uint8       284708    193000     51547   26.7
+skin__Human Skin Data with Xeniu   (45276, 32390, 3)      YXS    uint8        60571     68476     10449   15.3
+skin__Human Skin Data with Xeniu   (33606, 19058, 3)      YXS    uint8        71129     90106     24261   26.9
+skin__Human Skin Preview Data (X   (43287, 22209, 3)      YXS    uint8       101164     87499     44564   50.9
+skin__Human Skin Preview Data (X   (22673, 20342, 3)      YXS    uint8        87305    106980     43892   41.0
+skin__Preview Data: FFPE Human S   (35787, 18669, 3)      YXS    uint8       164412    112551     23389   20.8
+tonsil__Human Tonsil Data with X   (33969, 47351, 3)      YXS    uint8       806648    864388    378326   43.8
+tonsil__Human Tonsil Data with X   (41995, 31469, 3)      YXS    uint8      1254735   1349620    676403   50.1
+
+median match rate: 29.7%   (<20% => registration/matching is broken)
+
+=== 3. assignment CSV vs current clusters.csv ===
+bone__Human Bone and Bone Marrow Data wi   assign= 17 clusters= 17 unmapped=  0
+bone__Human Bone and Bone Marrow Data wi   assign= 31 clusters= 35 unmapped=  4  <-- MISMATCH
+bone__Human Bone and Bone Marrow Data wi   assign= 15 clusters= 15 unmapped=  0
+brain__FFPE Human Brain Cancer Data with   assign= 25 clusters= 26 unmapped=  1  <-- MISMATCH
+breast__FFPE Human Breast Cancer with 5K   assign= 26 clusters= 28 unmapped=  2  <-- MISMATCH
+breast__FFPE Human Breast using the Enti   assign= 28 clusters= 29 unmapped=  1  <-- MISMATCH
+breast__FFPE Human Breast using the Enti   assign= 21 clusters= 21 unmapped=  0
+breast__FFPE Human Breast with Custom Ad   assign= 24 clusters= 24 unmapped=  0
+breast__FFPE Human Breast with Custom Ad   assign= 23 clusters= 23 unmapped=  0
+breast__FFPE Human Breast with Pre-desig   assign= 25 clusters= 25 unmapped=  0
+breast__FFPE Human Breast with Pre-desig   assign= 25 clusters= 25 unmapped=  0
+breast__Xenium FFPE Human Breast with Cu   assign= 27 clusters= 27 unmapped=  0
+
+=== 4. overlays ===
+Traceback (most recent call last):
+  File "/workspace/wsinsight/wsinsight-model-development/wsinsight-train/scripts/diag_pipeline.py", line 116, in <module>
+    crop = np.asarray(arr[y0:y0 + W, x0:x0 + W])
+                      ~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/anaconda3/envs/wsinsight/lib/python3.11/site-packages/zarr/hierarchy.py", line 511, in __getitem__
+    raise KeyError(item)
+KeyError: (slice(14398, 15422, None), slice(16728, 17752, None))

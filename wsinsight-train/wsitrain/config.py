@@ -37,6 +37,9 @@ class RunConfig:
     transform: str = "affine"            # affine | affine+bspline | none
     match_radius_px: int = 4             # search window for the nucleus lookup
     min_match_rate: float = 0.35         # drop slides whose registration is unusable
+    # 'background' / 'filtered' are cells whose type is unknown, not junk: they turn
+    # up at inference too, so keeping them gives the model somewhere to put them.
+    drop_labels: tuple[str, ...] = ()
 
     # tiling (must match the historical export contract)
     tile_px: int = 1024

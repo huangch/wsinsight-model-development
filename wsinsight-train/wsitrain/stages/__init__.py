@@ -214,9 +214,12 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
 
     # Pass 1: label vocabulary across samples.
     from tqdm import tqdm
+    drop = {str(d).lower() for d in (cfg.drop_labels or ())}
     frames, labels = {}, set()
     for s in tqdm(samples, desc="transfer:read", unit="slide", ascii=" =", dynamic_ncols=True):
         df = _per_cell(s)
+        if drop:
+            df = df[~df["label"].str.lower().isin(drop)]
         frames[s.sample_id] = df
         labels.update(df["label"].unique())
     label_map = {i: n for i, n in enumerate(sorted(labels))}

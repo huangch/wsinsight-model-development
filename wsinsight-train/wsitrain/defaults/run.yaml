@@ -16,6 +16,7 @@ cellpose_flow_threshold: 0.0 # 0 = skip GPU flow QC (avoids whole-slide OOM)
 transform: affine            # affine | affine+bspline | none
 match_radius_px: 4           # search window for the nucleus lookup (0 = exact pixel)
 min_match_rate: 0.35         # slides below this are dropped: their labels are noise
+drop_labels: []              # 'background'/'filtered' are unknown-type cells, keep them
 
 # tiling (matches the established CellViT tile contract)
 tile_px: 1024

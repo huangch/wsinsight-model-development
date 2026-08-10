@@ -22,6 +22,7 @@ _INVALIDATES: dict[str, str] = {
     "transform": "transfer",
     "match_radius_px": "transfer",
     "min_match_rate": "transfer",
+    "drop_labels": "transfer",
     "tile_px": "tile",
     "mpp": "tile",
     "min_cells": "tile",

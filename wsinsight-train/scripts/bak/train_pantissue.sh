@@ -4,8 +4,9 @@
 # tissue into one head. Includes auto-tune and cellpose OOM guards.
 #
 # Usage: bash scripts/train_pantissue.sh [input_dir] [output_dir]
-# Env:   TASK (label space, default pantissue), TUNE, BY_SLIDE, CP_BATCH, CP_FLOW;
-#        ENVBIN = conda env bin with wsitrain+cellpose+kurtorank+torch.
+# Env:   TASK (label space, default pantissue), TUNE, BY_SLIDE, SEGMENTER,
+#        CP_BATCH, CP_FLOW; ENVBIN = conda env bin with
+#        wsitrain+cellpose+kurtorank+torch.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -25,11 +26,9 @@ OUT="${2:-$ROOT/models}"                             # manifest.json is per --ou
 TASK="${TASK:-pantissue}"                            # transfer appends _label.csv
 TUNE="${TUNE:-6}"
 BY_SLIDE="${BY_SLIDE:-true}"                         # slide-level holdout; false = tile-level split
+SEGMENTER="${SEGMENTER:-stardist}"
 
-# by_slide has no CLI flag, so it goes through a --config override file.
-CFG="$(mktemp -t wsitrain-pantissue-XXXXXX.yaml)"
-trap 'rm -f "$CFG"' EXIT
-printf 'by_slide: %s\n' "$BY_SLIDE" > "$CFG"
+if [ "$BY_SLIDE" = "true" ]; then SPLIT_FLAG=--by-slide; else SPLIT_FLAG=--by-tile; fi
 
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue pantissue || true
@@ -39,13 +38,12 @@ wsitrain run \
   --input "$INPUT" \
   --tissue pantissue \
   --task "$TASK" \
-  --config "$CFG" \
-  --segmenter cellpose \
+  "$SPLIT_FLAG" \
+  --segmenter "$SEGMENTER" \
   --cellpose-batch-size "${CP_BATCH:-4}" \
   --cellpose-flow-threshold "${CP_FLOW:-0}" \
   --transform affine \
   --output "$OUT" \
-  --from annotate --to report \
   --tune "$TUNE" \
   --gpus auto
 

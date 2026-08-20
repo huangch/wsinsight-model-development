@@ -54,33 +54,87 @@ conda activate "${ENV_NAME}"
 pip install --upgrade pip
 
 # Redirect pip cache off NAS to dodge inode quotas (seen on this cluster).
-pip cache purge || true
-export PIP_CACHE_DIR=/tmp/pip-cache-wsitrain
+# Exported before any purge: `pip cache purge` obeys this variable, so purging
+# first wiped the user's global ~/.cache/pip. Shared dir so the sibling repos
+# reuse the multi-hundred-MB torch/TF/cuDNN wheels.
+export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/tmp/pip-cache-wsinsight-stack}"
 
-# Heavy stack first.
-pip install torch torchvision nvidia-ml-py
-pip install cellpose
+# Heavy stack first, pinned to the same versions as wsinsight/sptxinsight so that
+# TensorFlow (StarDist) and PyTorch (CellViT) coexist.
+CONSTRAINTS="${SCRIPT_DIR}/constraints.txt"
+pip install -c "${CONSTRAINTS}" torch torchvision nvidia-ml-py
+pip install -c "${CONSTRAINTS}" cellpose
 
 # StarDist is the default segmentation backend.
-pip install "stardist" tensorflow || echo "WARNING: stardist install failed; use --segmenter cellpose"
+pip install -c "${CONSTRAINTS}" "numpy<2" stardist tensorflow \
+    || echo "WARNING: stardist install failed; use --segmenter cellpose"
 
 # Runtime + test deps not covered by the heavy stack above.
 # zarr is what keeps the tile stage from loading whole slides into RAM.
-pip install pyarrow pytest zarr
+pip install -c "${CONSTRAINTS}" pyarrow pytest zarr pyyaml tifffile pillow tqdm
 
 # kurtorank (editable, not on PyPI).
 if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
+    # Its deps are installed explicitly because the editable install below uses
+    # --no-deps: letting pip resolve them relaxes the numpy<2 / zarr<3 generation
+    # that stardist and the shared wsinsight env depend on.
+    pip install -c "${CONSTRAINTS}" \
+        anndata scanpy squidpy spatialdata spatialdata-io \
+        xarray dask distributed pandas scipy statsmodels matplotlib seaborn click
+    # Only kurtorank's rank/marker-* commands need these, and they import them
+    # lazily, so a failure here still leaves `kurtorank annotate` working.
+    pip install -c "${CONSTRAINTS}" cellxgene-census tiledbsoma \
+        || echo "WARNING: cellxgene-census/tiledbsoma failed; kurtorank marker-*/rank unavailable"
     pip install --no-deps -e "${KURTORANK_DIR}"
 else
-    echo "WARNING: kurtorank repo not found at ../../kurtorank; install it manually."
+    echo "WARNING: kurtorank repo not found at ${SCRIPT_DIR}/../kurtorank; install it manually."
 fi
 
 # wsitrain itself (deps above already satisfied).
 pip install --no-deps -e "${SCRIPT_DIR}"
 
-# Smoke test.
+# ── Smoke test ────────────────────────────────────────────────────────────────
+# Hard checks are fatal: a half-installed env must not look like a success.
+# The test suite is reported but does not fail the setup.
 echo "---- smoke test ----"
-wsitrain --version
-python -m pytest "${SCRIPT_DIR}/tests" -q || echo "WARNING: test suite did not pass"
-python -c "import torch; print('cuda', torch.cuda.is_available(), torch.cuda.device_count())"
+SMOKE_FAIL=0
+smoke() {                       # smoke <label> <command...>
+    label="$1"; shift
+    if "$@" >/dev/null 2>&1; then
+        printf '  PASS  %s\n' "$label"
+    else
+        printf '  FAIL  %s\n' "$label"
+        SMOKE_FAIL=$((SMOKE_FAIL + 1))
+    fi
+}
+
+python -c 'import importlib.metadata as m; print("  numpy", m.version("numpy"), "| torch", m.version("torch"))' || true
+python -c 'import torch; print("  cuda", torch.cuda.is_available(), torch.cuda.device_count())' || true
+
+smoke "wsitrain on PATH"     command -v wsitrain
+smoke "wsitrain --help"      wsitrain --help
+smoke "import wsitrain"      python -c 'import wsitrain'
+# `kurtorank --help` is the gate that catches a --no-deps install whose
+# dependency tree was never populated; a bare `import kurtorank` does not.
+smoke "kurtorank on PATH"    command -v kurtorank
+smoke "kurtorank --help"     kurtorank --help
+smoke "import torch"         python -c 'import torch'
+smoke "numpy < 2"            python -c 'import numpy, sys; sys.exit(int(numpy.__version__.split(".")[0]) >= 2)'
+# StarDist is the default --segmenter but its install is tolerated-failure, so
+# this warns rather than failing setup; cellpose is the documented fallback.
+python -c 'import stardist' >/dev/null 2>&1 \
+    && echo "  PASS  stardist importable" \
+    || echo "  WARN  stardist unavailable; use --segmenter cellpose (non-fatal)"
+
+if [[ -d "${SCRIPT_DIR}/tests" ]]; then
+    python -m pytest "${SCRIPT_DIR}/tests" -q \
+        && echo "  PASS  test suite" \
+        || echo "  WARN  test suite did not pass (non-fatal)"
+fi
+
+if [[ "${SMOKE_FAIL}" -ne 0 ]]; then
+    echo "smoke test: ${SMOKE_FAIL} check(s) FAILED" >&2
+    exit 1
+fi
+echo "smoke test: all checks passed"
 echo "Done. Set CELLVIT_ROOT, then: wsitrain check --input <dir> --tissue pantissue"

@@ -15,20 +15,16 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 cd "$ROOT"
 
-CFG="$(mktemp -t wsitrain-pannuke-XXXXXX.yaml)"
-trap 'rm -f "$CFG"' EXIT
-printf 'by_slide: true\n' > "$CFG"
-
 # --force because the change lives in the train config template, which the
 # manifest does not track.
 wsitrain run \
   --input "$ROOT/data/xenium" \
   --tissue pantissue \
   --task pannuke \
-  --config "$CFG" \
+  --by-slide \
   --transform affine \
   --output "$ROOT/models/pannuke" \
-  --from split --to report --force \
+  --stage-skip annotate segment transfer tile --force \
   --tune 0 --gpus auto
 
 echo "Done. Report: $ROOT/models/pannuke/report/pantissue/"

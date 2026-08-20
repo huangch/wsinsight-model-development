@@ -1,8 +1,6 @@
 """End-to-end DAG driver with manifest-based resume."""
 from __future__ import annotations
 
-from pathlib import Path
-
 from . import STAGES
 from .config import RunConfig
 from .dataset import discover_samples
@@ -11,13 +9,6 @@ from .paths import resolved_config_path, manifest_path
 from .stages import STAGE_FUNCS
 
 import yaml
-
-
-def step_range(start: str, end: str) -> list[str]:
-    i, j = STAGES.index(start), STAGES.index(end)
-    if i > j:
-        raise SystemExit(f"--from {start} comes after --to {end}")
-    return list(STAGES[i:j + 1])
 
 
 # Stage -> key in its return dict that must be non-empty; a stage that produced
@@ -29,12 +20,11 @@ _REQUIRED_OUTPUT = {
 }
 
 
-def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
-        skip: list[str] | None = None, force: bool = False) -> int:
-    skip = skip or []
+def run(cfg: RunConfig, *, skip: list[str] | None = None, force: bool = False) -> int:
+    skipped = set(skip or [])
     cfg.output.mkdir(parents=True, exist_ok=True)
-    resolved_config_path(cfg.output).write_text(yaml.safe_dump(cfg.to_dict()))
-    mf = Manifest.load_or_new(manifest_path(cfg.output), cfg.to_dict())
+    resolved_config_path(cfg.output, cfg.tissue).write_text(yaml.safe_dump(cfg.to_dict()))
+    mf = Manifest.load_or_new(manifest_path(cfg.output, cfg.tissue), cfg.to_dict())
     samples = discover_samples(cfg.input, cfg.tissue)
     if cfg.transform != "none":
         kept = [s for s in samples if s.aligned]
@@ -43,7 +33,7 @@ def run(cfg: RunConfig, *, from_step: str = "annotate", to_step: str = "report",
             print(f"[run] skipping {dropped} unaligned sample(s) (transform={cfg.transform}); "
                   f"register them or use --transform none")
         samples = kept
-    todo = [s for s in step_range(from_step, to_step) if s not in skip]
+    todo = [s for s in STAGES if s not in skipped]
     print(f"[run] tissue={cfg.tissue} samples={len(samples)} steps={todo}")
 
     if not samples and {"annotate", "segment", "transfer", "tile"}.intersection(todo):

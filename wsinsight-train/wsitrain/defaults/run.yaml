@@ -1,10 +1,15 @@
 # Default run configuration for wsinsight-train.
-# Users override any of these via --config my.yaml or individual CLI flags.
+# Every key here is also a CLI flag; the flag wins when both are present.
 # `input`, `tissue` and `output` are always supplied on the command line.
 
 # segmentation
 segmenter: stardist          # cellpose | stardist
 cellpose_model: cpsam
+stardist_model: 2D_versatile_he
+# Parent of the csbdeep model folder, e.g. ~/.keras/models/StarDist2D.
+# null downloads it, which needs network access.
+stardist_model_dir: null
+stardist_cpu: false          # run StarDist on CPU; torch/CellViT keep the GPU
 diameter: null               # nucleus diameter in MICRONS; null => auto
 cellpose_batch_size: 8       # tile batch; lower (4/2) if GPU OOMs
 cellpose_flow_threshold: 0.0 # 0 = skip GPU flow QC (avoids whole-slide OOM)

@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+# setuptools<67 matches wsinsight (the reference for cross-package
+# compatibility) and the runtime pin in constraints.txt: >=67 drops
+# pkg_resources, which the shared env still needs.
+requires = ["setuptools<67", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,10 +10,13 @@ name = "wsinsight-train"
 version = "0.1.0"
 description = "End-to-end, headless CLI to train WSInsight CellViT cell-classification heads from paired Xenium + H&E."
 readme = "README.md"
-requires-python = ">=3.10"
+# 3.11 matches wsinsight; every install path (conda-setup.sh, Dockerfile) builds
+# py3.11 and the shared env requires it.
+requires-python = ">=3.11"
 license = { text = "BSD-3-Clause" }
 dependencies = [
-  "numpy",
+  # numpy 2.x breaks stardist and the pinned cellpose/torch stack.
+  "numpy<2.0.0",
   "pandas",
   "pyarrow",
   "pyyaml",

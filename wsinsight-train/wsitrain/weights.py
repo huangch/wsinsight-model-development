@@ -22,14 +22,22 @@ class WeightReport(NamedTuple):
 def load_label_map(path: Path) -> dict[int, str]:
     out: dict[int, str] = {}
     for line in Path(path).read_text().splitlines():
-        bare = line.split("#", 1)[0].strip()
-        if not bare:
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
             continue
-        key, _, val = bare.partition(":")
+        key, _, val = raw.partition(":")
         try:
-            out[int(key.strip())] = val.strip().strip("'\"")
+            idx = int(key.strip())
         except ValueError:
             continue
+        val = val.strip()
+        if val[:1] in ('"', "'"):
+            # Quoted names may legitimately contain ':' or '#'.
+            quote, end = val[0], val.find(val[0], 1)
+            val = val[1:end] if end > 0 else val[1:]
+        else:
+            val = val.split("#", 1)[0].strip()
+        out[idx] = val
     return out
 
 
@@ -54,6 +62,13 @@ def compute_weights(label_map_path: Path, label_dir: Path, *,
     label_map = load_label_map(label_map_path)
     if not label_map:
         raise ValueError(f"label_map is empty: {label_map_path}")
+    ids = sorted(label_map)
+    if ids != list(range(len(ids))):
+        # pct/weights below are positional, so a gap silently drops a class's
+        # cells and hands its budget to an id that does not exist.
+        raise ValueError(
+            f"label_map ids must run 0..{len(ids) - 1} without gaps; "
+            f"got {ids} in {label_map_path}")
     counts = tally_labels(label_dir)
     n_total = sum(counts.values())
     if n_total == 0:

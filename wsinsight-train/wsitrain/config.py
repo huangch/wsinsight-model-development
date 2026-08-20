@@ -1,9 +1,8 @@
-"""Run configuration: shipped defaults + user overrides + CLI flags.
+"""Run configuration: shipped defaults + CLI flags.
 
 A run is fully described by a ``RunConfig``. The shipped ``defaults/run.yaml``
-holds every tunable; users override via ``--config my.yaml`` and/or individual
-CLI flags. This keeps the front-door command to two required values (input +
-tissue) while remaining fully declarative and reproducible.
+holds every tunable; every one of them is also reachable as a CLI flag, so a
+run is reproducible from its command line alone.
 """
 from __future__ import annotations
 
@@ -26,6 +25,9 @@ class RunConfig:
     # segmentation
     segmenter: str = "stardist"         # cellpose | stardist
     cellpose_model: str = "cpsam"
+    stardist_model: str = "2D_versatile_he"
+    stardist_model_dir: Path | None = None   # parent of the csbdeep model folder
+    stardist_cpu: bool = False               # TF-only; needed without a CUDA toolkit
     diameter: float | None = None
     cellpose_batch_size: int = 8         # tile batch; lower if GPU OOMs
     cellpose_flow_threshold: float = 0.0 # 0 = skip GPU flow QC (avoids WSI OOM)
@@ -65,11 +67,21 @@ class RunConfig:
     markers_csv: Path | None = None
     top_k_markers: int = 25
 
+    def __post_init__(self) -> None:
+        # YAML gives a list, the CLI gives a tuple; pin one so the manifest
+        # comparison and the declared type agree whatever the source.
+        if not isinstance(self.drop_labels, tuple):
+            self.drop_labels = tuple(self.drop_labels or ())
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         for k, v in d.items():
             if isinstance(v, Path):
                 d[k] = str(v)
+            elif isinstance(v, tuple):
+                # The manifest round-trips through JSON, which turns tuples into
+                # lists; without this every reload looks like a config change.
+                d[k] = list(v)
         return d
 
 
@@ -78,18 +90,14 @@ def load_defaults() -> dict[str, Any]:
 
 
 def build_config(input_dir: Path, tissue: str, output: Path | None,
-                 user_config: Path | None = None,
                  overrides: dict[str, Any] | None = None) -> RunConfig:
-    """Merge shipped defaults < user config file < explicit CLI overrides."""
+    """Merge shipped defaults < explicit CLI overrides."""
     merged = load_defaults()
-    if user_config is not None:
-        merged.update(yaml.safe_load(Path(user_config).read_text()) or {})
     if overrides:
         merged.update({k: v for k, v in overrides.items() if v is not None})
 
-    merged.pop("input", None)
-    merged.pop("tissue", None)
-    merged.pop("output", None)
+    for key in ("input", "tissue", "output"):
+        merged.pop(key, None)
     out = output or (Path(input_dir) / "wsinsight_train_out")
     valid = RunConfig.__dataclass_fields__.keys()
     merged = {k: v for k, v in merged.items() if k in valid}

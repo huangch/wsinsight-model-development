@@ -18,20 +18,44 @@ def runnable(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# step_range
+# stage selection
 # --------------------------------------------------------------------------
 
-def test_step_range_is_inclusive():
-    assert dag.step_range("split", "train") == ["split", "train"]
+def test_all_stages_run_by_default(runnable, monkeypatch):
+    ran = []
+    for stage in dag.STAGE_FUNCS:
+        monkeypatch.setitem(dag.STAGE_FUNCS, stage,
+                            lambda c, s, o, _n=stage: ran.append(_n) or _nonempty(_n))
+    dag.run(runnable)
+    assert ran == list(dag.STAGES)
 
 
-def test_step_range_single_stage():
-    assert dag.step_range("tile", "tile") == ["tile"]
+def _nonempty(stage):
+    return {"nuclei_per_sample": {"a": 1}, "cells_per_sample": {"a": 1}, "tiles": 1}
 
 
-def test_step_range_rejects_inverted_bounds():
-    with pytest.raises(SystemExit):
-        dag.step_range("train", "segment")
+def _only(*stages):
+    """Skip list that leaves only ``stages`` running."""
+    return [s for s in dag.STAGES if s not in stages]
+
+
+def test_skipped_stage_does_not_run(runnable, monkeypatch):
+    ran = []
+    for stage in dag.STAGE_FUNCS:
+        monkeypatch.setitem(dag.STAGE_FUNCS, stage,
+                            lambda c, s, o, _n=stage: ran.append(_n) or _nonempty(_n))
+    dag.run(runnable, skip=["train", "validate"])
+    assert "train" not in ran and "validate" not in ran
+    assert "tile" in ran and "export" in ran
+
+
+def test_stage_order_is_preserved(runnable, monkeypatch):
+    ran = []
+    for stage in dag.STAGE_FUNCS:
+        monkeypatch.setitem(dag.STAGE_FUNCS, stage,
+                            lambda c, s, o, _n=stage: ran.append(_n) or _nonempty(_n))
+    dag.run(runnable, skip=["segment"])
+    assert ran == [s for s in dag.STAGES if s != "segment"]
 
 
 # --------------------------------------------------------------------------
@@ -40,55 +64,95 @@ def test_step_range_rejects_inverted_bounds():
 
 def test_run_executes_requested_stages(runnable, monkeypatch):
     seen = []
-    monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: seen.append("split"))
-    assert dag.run(runnable, from_step="split", to_step="split") == 0
+    for stage in dag.STAGE_FUNCS:
+        monkeypatch.setitem(dag.STAGE_FUNCS, stage,
+                            lambda c, s, o, _n=stage: seen.append(_n) or _nonempty(_n))
+    assert dag.run(runnable, skip=[s for s in dag.STAGES if s != "split"]) == 0
     assert seen == ["split"]
 
 
 def test_run_skips_listed_stages(runnable, monkeypatch):
     seen = []
     monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: seen.append("split"))
-    dag.run(runnable, from_step="split", to_step="split", skip=["split"])
+    dag.run(runnable, skip=list(dag.STAGES))
     assert seen == []
 
 
 def test_run_writes_resolved_config(runnable, monkeypatch):
     monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: {})
-    dag.run(runnable, from_step="split", to_step="split")
-    assert (runnable.output / "run.yaml").exists()
+    dag.run(runnable, skip=_only("split"))
+    assert (runnable.output / "run-breast.yaml").exists()
+
+
+def test_manifest_filename_is_scoped_to_tissue(runnable, monkeypatch):
+    monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: {})
+    dag.run(runnable, skip=_only("split"))
+    assert (runnable.output / "manifest-breast.json").exists()
+
+
+def _two_tissue_input(tmp_path):
+    for tissue in ("breast", "lung"):
+        outs = tmp_path / "input" / tissue / "s1" / "outs"
+        outs.mkdir(parents=True)
+        (outs / "cells.parquet").write_bytes(b"")
+        (outs.parent / "s1_he_image.ome.tif").write_bytes(b"")
+    return tmp_path / "input"
+
+
+def test_tissues_do_not_share_a_manifest(tmp_path, monkeypatch):
+    """A second tissue in the same --output must not inherit 'done' stages."""
+    src = _two_tissue_input(tmp_path)
+    out = tmp_path / "out"
+    ran = []
+    monkeypatch.setitem(dag.STAGE_FUNCS, "split",
+                        lambda cfg, s, o: ran.append(cfg.tissue))
+
+    for tissue in ("breast", "lung"):
+        dag.run(build_config(src, tissue, out), skip=_only("split"))
+
+    assert ran == ["breast", "lung"]
+
+
+def test_comma_tissue_scope_gets_its_own_manifest(tmp_path, monkeypatch):
+    src = _two_tissue_input(tmp_path)
+    out = tmp_path / "out"
+    monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: {})
+    dag.run(build_config(src, "breast,lung", out), skip=_only("split"))
+
+    assert (out / "manifest-breast,lung.json").exists()
 
 
 def test_completed_stage_is_not_rerun(runnable, monkeypatch):
     calls = []
     monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: calls.append(1))
-    dag.run(runnable, from_step="split", to_step="split")
-    dag.run(runnable, from_step="split", to_step="split")
+    dag.run(runnable, skip=_only("split"))
+    dag.run(runnable, skip=_only("split"))
     assert len(calls) == 1
 
 
 def test_force_reruns_completed_stage(runnable, monkeypatch):
     calls = []
     monkeypatch.setitem(dag.STAGE_FUNCS, "split", lambda c, s, o: calls.append(1))
-    dag.run(runnable, from_step="split", to_step="split")
-    dag.run(runnable, from_step="split", to_step="split", force=True)
+    dag.run(runnable, skip=_only("split"))
+    dag.run(runnable, skip=_only("split"), force=True)
     assert len(calls) == 2
 
 
 def test_empty_required_output_aborts(runnable, monkeypatch):
     monkeypatch.setitem(dag.STAGE_FUNCS, "tile", lambda c, s, o: {"tiles": 0})
     with pytest.raises(SystemExit, match="produced no tiles"):
-        dag.run(runnable, from_step="tile", to_step="tile")
+        dag.run(runnable, skip=_only("tile"))
 
 
 def test_empty_required_output_is_not_marked_done(runnable, monkeypatch):
     monkeypatch.setitem(dag.STAGE_FUNCS, "tile", lambda c, s, o: {"tiles": 0})
     with pytest.raises(SystemExit):
-        dag.run(runnable, from_step="tile", to_step="tile")
+        dag.run(runnable, skip=_only("tile"))
 
     calls = []
     monkeypatch.setitem(dag.STAGE_FUNCS, "tile",
                         lambda c, s, o: (calls.append(1), {"tiles": 3})[1])
-    dag.run(runnable, from_step="tile", to_step="tile")
+    dag.run(runnable, skip=_only("tile"))
     assert calls == [1]
 
 
@@ -97,7 +161,7 @@ def test_not_implemented_stage_stops_cleanly(runnable, monkeypatch):
         raise NotImplementedError("todo")
 
     monkeypatch.setitem(dag.STAGE_FUNCS, "split", boom)
-    assert dag.run(runnable, from_step="split", to_step="split") == 0
+    assert dag.run(runnable, skip=_only("split")) == 0
 
 
 def test_missing_samples_aborts_data_stages(tmp_path):
@@ -105,7 +169,7 @@ def test_missing_samples_aborts_data_stages(tmp_path):
     empty.mkdir()
     cfg = build_config(empty, "breast", tmp_path / "out")
     with pytest.raises(SystemExit, match="no samples found"):
-        dag.run(cfg, from_step="segment", to_step="segment")
+        dag.run(cfg, skip=_only("segment"))
 
 
 def test_unaligned_samples_are_filtered(tmp_path, monkeypatch):
@@ -116,7 +180,7 @@ def test_unaligned_samples_are_filtered(tmp_path, monkeypatch):
     cfg = build_config(tmp_path / "input", "breast", tmp_path / "out")
 
     with pytest.raises(SystemExit, match="no samples found"):
-        dag.run(cfg, from_step="segment", to_step="segment")
+        dag.run(cfg, skip=_only("segment"))
 
 
 def test_transform_none_keeps_unaligned_samples(tmp_path, monkeypatch):
@@ -130,7 +194,7 @@ def test_transform_none_keeps_unaligned_samples(tmp_path, monkeypatch):
     got = []
     monkeypatch.setitem(dag.STAGE_FUNCS, "segment",
                         lambda c, s, o: (got.extend(s), {"nuclei_per_sample": {"a": 1}})[1])
-    dag.run(cfg, from_step="segment", to_step="segment")
+    dag.run(cfg, skip=_only("segment"))
     assert len(got) == 1
 
 

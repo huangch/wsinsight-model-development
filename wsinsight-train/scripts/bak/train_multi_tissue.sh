@@ -7,7 +7,7 @@
 # Usage: bash scripts/train_multi_tissue.sh <input_dir> <tissue[,tissue...]>
 #   e.g. bash scripts/train_multi_tissue.sh data/xenium breast,lung
 #        bash scripts/train_multi_tissue.sh data/xenium colorectal
-# Env:   TASK, CP_BATCH, CP_FLOW; ENVBIN = conda env bin with
+# Env:   TASK, TUNE, SEGMENTER, CP_BATCH, CP_FLOW; ENVBIN = conda env bin with
 #        wsitrain+cellpose+kurtorank+torch.
 set -euo pipefail
 
@@ -26,22 +26,24 @@ mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 INPUT="${1:-$ROOT/data/xenium}"
 TISSUE="${2:?tissue scope, e.g. breast,lung or colorectal}"
 TASK="${TASK:-pannuke}"                                 # PanNuke label space (transfer appends _label.csv)
+TUNE="${TUNE:-0}"                                    # auto-tune retrains; opt in explicitly
+SEGMENTER="${SEGMENTER:-stardist}"
 OUT="$ROOT/models"                                   # all run outputs under models/
 
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
-echo "== full cycle ($TISSUE) =="
+echo "== full cycle ($TISSUE, segmenter=$SEGMENTER, tune=$TUNE) =="
 wsitrain run \
   --input "$INPUT" \
   --tissue "$TISSUE" \
   --task "$TASK" \
-  --segmenter cellpose \
+  --segmenter "$SEGMENTER" \
   --cellpose-batch-size "${CP_BATCH:-4}" \
   --cellpose-flow-threshold "${CP_FLOW:-0}" \
   --transform affine \
   --output "$OUT" \
-  --from annotate --to export \
-  --tune 6
+  --stage-skip report \
+  --tune "$TUNE"
 
 echo "Done. Head + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"

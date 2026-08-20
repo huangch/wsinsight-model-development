@@ -67,33 +67,60 @@ WORKDIR /app
 COPY ./wsinsight-train /app/wsinsight-train
 COPY ./kurtorank       /app/kurtorank
 
+# Every pip layer below is constrained. Unconstrained, torch resolves to >=2.9,
+# which pulls the CUDA 13 wheel set over nvidia/cudnn/lib and leaves TensorFlow
+# (StarDist) loading a cuDNN it was not built against.
+# ARG rather than ENV so the path does not leak into the runtime environment.
+ARG CONSTR=/app/wsinsight-train/constraints.txt
+
 # ------------------------------------
 # Install PyTorch + GPU support
 # ------------------------------------
-RUN pip install --retries 10 torch torchvision nvidia-ml-py
+RUN pip install --retries 10 -c "$CONSTR" torch torchvision nvidia-ml-py
 
 # ------------------------------------
 # Install cellpose (cell segmentation backbone)
 # ------------------------------------
-RUN pip install --retries 10 cellpose
+RUN pip install --retries 10 -c "$CONSTR" cellpose
 
 # ------------------------------------
-# Install optional StarDist + TensorFlow (legacy stain normalization)
-# Tolerate failure — wsitrain can run without it. stderr is deliberately NOT
-# suppressed: if this is skipped the build log must show why.
+# Install optional StarDist + TensorFlow (default segmentation backend)
+# Tolerate failure — wsitrain can fall back to --segmenter cellpose. stderr is
+# deliberately NOT suppressed: if this is skipped the build log must show why.
 # ------------------------------------
-RUN pip install --retries 5 stardist tensorflow || \
-    echo "WARNING: stardist/tensorflow optional install skipped; continuing"
+RUN pip install --retries 5 -c "$CONSTR" "numpy<2" stardist tensorflow || \
+    echo "WARNING: stardist/tensorflow optional install skipped; use --segmenter cellpose"
+
+# ------------------------------------
+# wsitrain's own runtime deps. It is installed --no-deps below, so nothing else
+# would pull these in. zarr is what keeps the tile stage from loading whole
+# slides into RAM.
+# ------------------------------------
+RUN pip install --retries 10 -c "$CONSTR" \
+        pyarrow pyyaml tifffile pillow tqdm zarr pytest
+
+# ------------------------------------
+# kurtorank's runtime deps. These are NOT a subset of the layers above — the
+# preceding torch/cellpose/stardist layers pull in none of the AnnData stack.
+# ------------------------------------
+RUN pip install --retries 10 -c "$CONSTR" \
+        anndata scanpy squidpy spatialdata spatialdata-io \
+        xarray dask distributed pandas scipy statsmodels matplotlib seaborn click
+
+# Only kurtorank's rank/marker-* commands need these, and every import site is
+# lazy, so a failure here still leaves `kurtorank annotate` working.
+RUN pip install --retries 5 -c "$CONSTR" cellxgene-census tiledbsoma || \
+    echo "WARNING: cellxgene-census/tiledbsoma skipped; kurtorank rank/marker-* unavailable"
 
 # ------------------------------------
 # Install kurtorank (unsupervised annotation library, not on PyPI)
-# --no-deps: all of its deps are already installed above.
+# --no-deps so pip cannot relax the numpy<2 / zarr<3 generation pinned above.
 # ------------------------------------
 RUN pip install --no-deps -e /app/kurtorank
 
 # ------------------------------------
 # Install wsitrain itself
-# --no-deps: torch, cellpose, kurtorank already installed above.
+# --no-deps for the same reason; its deps are installed above.
 # ------------------------------------
 RUN pip install --no-deps -e /app/wsinsight-train
 
@@ -113,15 +140,27 @@ PY
 
 # ENTRYPOINT below is the `wsitrain` console script, so its absence would only
 # surface as an exec failure at `docker run` time. Gate it at build time.
-RUN command -v wsitrain && wsitrain --help > /dev/null
+# `kurtorank --help` is the gate that catches a --no-deps install whose
+# dependency tree was never populated; the bare `import kurtorank` above does not.
+RUN command -v wsitrain && wsitrain --help > /dev/null && \
+    command -v kurtorank && kurtorank --help > /dev/null && \
+    python -c "import numpy; v=numpy.__version__; assert int(v.split('.')[0]) < 2, 'numpy '+v+' >= 2.0 breaks stardist'; print('numpy', v, 'OK')"
 
 # ------------------------------------
 # Non-root user
 # ------------------------------------
+# The container starts as root; the runtime entrypoint (docker-entrypoint.sh)
+# remaps the pre-created ``user`` account to the owner of the mounted /workspace
+# (or to $HOST_UID/$HOST_GID) and then drops privileges via setpriv. The uid/gid
+# baked here is only a throwaway placeholder, immediately overwritten at run time.
 RUN groupadd -g 1000 user && \
     useradd -m -u 1000 -g 1000 -s /bin/bash user && \
     bash -lc 'echo ". /opt/conda/etc/profile.d/conda.sh" >> /home/user/.bashrc' && \
-    bash -lc 'echo "conda activate wsitrain" >> /home/user/.bashrc'
+    bash -lc 'echo "conda activate wsitrain" >> /home/user/.bashrc' && \
+    chown -R 1000:1000 /home/user
+
+# Install the runtime uid/gid-remapping entrypoint.
+RUN install -m 0755 /app/wsinsight-train/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # ------------------------------------
 # Environment variables
@@ -131,8 +170,13 @@ ENV CELLVIT_ROOT=/workspace/cellvit
 
 WORKDIR /workspace
 RUN chown -R 1000:1000 /workspace
-USER user
+# NOTE: no ``USER`` here on purpose — the container starts as root so the
+# entrypoint can remap ``user`` to the mount owner, then drops privileges via
+# setpriv. Passing ``docker run --user ...`` still works: the entrypoint detects
+# a non-root start and execs the command unchanged.
 
 SHELL ["/bin/bash", "-lc"]
-ENTRYPOINT ["wsitrain"]
+# `wsitrain` stays baked into the ENTRYPOINT so the CLI surface is unchanged:
+# `docker run <img> run --input ...` still means `wsitrain run --input ...`.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh", "wsitrain"]
 CMD ["--help"]

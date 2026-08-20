@@ -39,30 +39,36 @@ def test_none_overrides_are_ignored(tmp_path):
     assert cfg.segmenter == "stardist"
 
 
-def test_user_config_beats_defaults_and_loses_to_cli(tmp_path):
-    user = tmp_path / "u.yaml"
-    user.write_text(yaml.safe_dump({"tile_px": 512, "seed": 7}))
-    cfg = build_config(tmp_path, "breast", tmp_path / "o", user_config=user,
-                       overrides={"seed": 99})
-    assert cfg.tile_px == 512 and cfg.seed == 99
-
-
-def test_unknown_config_keys_are_dropped(tmp_path):
-    user = tmp_path / "u.yaml"
-    user.write_text(yaml.safe_dump({"not_a_field": 1}))
-    assert build_config(tmp_path, "breast", tmp_path / "o", user_config=user)
-
-
-def test_io_fields_cannot_be_overridden_by_file(tmp_path):
-    user = tmp_path / "u.yaml"
-    user.write_text(yaml.safe_dump({"tissue": "lung", "input": "/elsewhere"}))
-    cfg = build_config(tmp_path, "breast", tmp_path / "o", user_config=user)
-    assert cfg.tissue == "breast" and cfg.input == tmp_path
+def test_unknown_override_keys_are_dropped(tmp_path):
+    assert build_config(tmp_path, "breast", tmp_path / "o",
+                        overrides={"not_a_field": 1})
 
 
 def test_to_dict_is_yaml_safe(tmp_path):
     cfg = build_config(tmp_path, "breast", tmp_path / "o")
     assert isinstance(yaml.safe_dump(cfg.to_dict()), str)
+
+
+def test_tuple_fields_serialise_as_lists(tmp_path):
+    """The manifest stores JSON, so tuples must not reappear as a phantom change."""
+    import json
+
+    cfg = build_config(tmp_path, "breast", tmp_path / "o",
+                       overrides={"drop_labels": ("background",)})
+    d = cfg.to_dict()
+    assert d["drop_labels"] == ["background"]
+    assert json.loads(json.dumps(d))["drop_labels"] == d["drop_labels"]
+
+
+def test_default_drop_labels_survive_a_manifest_reload(tmp_path):
+    p = tmp_path / "m.json"
+    cfg = build_config(tmp_path, "breast", tmp_path / "o")
+    mf = Manifest.load_or_new(p, cfg.to_dict())
+    mf.mark("transfer", "done")
+
+    reloaded = Manifest.load_or_new(p, cfg.to_dict())
+
+    assert reloaded.is_done("transfer")
 
 
 # --------------------------------------------------------------------------
@@ -133,7 +139,7 @@ def test_render_emits_all_classes(tmp_path, rendered_tree):
     cfg = build_config(tmp_path, "breast", out)
     body = render_config(cfg, out).read_text()
     assert "num_classes: 3" in body
-    assert "0: a" in body and "2: c" in body
+    assert '0: "a"' in body and '2: "c"' in body
 
 
 def test_render_uses_per_tissue_log_dir(tmp_path, rendered_tree):

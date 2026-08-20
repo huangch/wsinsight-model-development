@@ -18,20 +18,16 @@ export TORCH_HOME="${TORCH_HOME:-/workspace/.torch}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export PYTHONUNBUFFERED=1
 
-# by_slide has no CLI flag, so it goes through a --config override file.
-CFG="$(mktemp -t wsitrain-pannuke-XXXXXX.yaml)"
-trap 'rm -f "$CFG"' EXIT
-printf 'by_slide: %s\n' "$BY_SLIDE" > "$CFG"
+if [ "$BY_SLIDE" = "true" ]; then SPLIT_FLAG=--by-slide; else SPLIT_FLAG=--by-tile; fi
 
 echo "== pannuke (by_slide=$BY_SLIDE, tune=$TUNE) -> $OUT =="
 wsitrain run \
   --input "$INPUT" \
   --tissue pantissue \
   --task pannuke \
-  --config "$CFG" \
+  "$SPLIT_FLAG" \
   --transform affine \
   --output "$OUT" \
-  --from annotate --to report \
   --tune "$TUNE" \
   --gpus auto
 

@@ -33,17 +33,22 @@ def _per_class_f1(run_dir: Path):
         return None
 
 
-def read_macro_f1(run_dir: Path) -> float | None:
-    # scores.json's "F1-Score/Validation" is micro-F1 (== accuracy), which the
-    # majority class dominates; derive the true macro average when possible.
+def read_macro_f1(run_dir: Path):
+    """``(value, source)`` where source is 'macro' (tensors) or 'micro' (scores.json).
+
+    scores.json's "F1-Score/Validation" is micro-F1 (== accuracy), which the
+    majority class dominates. The two are not comparable, so the source is
+    returned alongside the value and the caller refuses to mix them.
+    """
     res = _per_class_f1(run_dir)
     if res is not None and len(res[1]):
-        return float(res[1].mean())
+        return float(res[1].mean()), "macro"
     scores = run_dir / "val_results" / "scores.json"
     if scores.exists():
-        d = json.loads(scores.read_text())
-        return d.get("F1-Score/Validation")
-    return None
+        value = json.loads(scores.read_text()).get("F1-Score/Validation")
+        if value is not None:
+            return float(value), "micro"
+    return None, None
 
 
 def weakest_class(run_dir: Path) -> int | None:
@@ -68,13 +73,15 @@ def apply_lever(lever, weights, drop, lr, weak):
 
 def run_tune(cfg, out, cellvit, *, base_config, py):
     """Outer loop: retrain with one lever/iter, keep if macro-F1 improves."""
+    import os
     import subprocess
     from pathlib import Path
     from . import configrender, paths, weights as weights_mod
     from .stages import _find_run_dir
 
     run_dir = _find_run_dir(cfg, out, required=False)
-    best_f1 = read_macro_f1(run_dir) if run_dir else None
+    best_f1, best_src = read_macro_f1(run_dir) if run_dir else (None, None)
+    best_run = run_dir
     # Seed with the default inverse-frequency weights so the "weight" lever has a
     # real per-class vector to boost (was None -> list(None) TypeError on iter 1).
     _rep = weights_mod.compute_weights(
@@ -85,10 +92,17 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     for it in range(cfg.tune):
         lever = LEVERS[li % len(LEVERS)]
         weak = weakest_class(run_dir) if run_dir else None
-        weights, drop, lr = apply_lever(lever, weights, drop, lr, weak)
-        cp = configrender.render_config(cfg, out, drop_rate=drop, lr=lr, weights=weights)
-        import os as _os
-        _env = _os.environ.copy()
+        cand = apply_lever(lever, weights, drop, lr, weak)
+        if cand == (weights, drop, lr):
+            # Retraining an identical config cannot teach us anything.
+            log.append({"iter": it, "lever": lever, "f1": None, "accepted": False,
+                        "note": "lever had no effect"})
+            li += 1
+            continue
+        cand_w, cand_drop, cand_lr = cand
+        cp = configrender.render_config(cfg, out, drop_rate=cand_drop, lr=cand_lr,
+                                        weights=cand_w)
+        _env = os.environ.copy()
         _env["PYTHONPATH"] = cellvit
         subprocess.run(
             [py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
@@ -96,15 +110,41 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
             cwd=cellvit, env=_env, check=True,
         )
         run_dir = _find_run_dir(cfg, out, required=False)
-        f1 = read_macro_f1(run_dir) if run_dir else None
-        ok = best_f1 is None or (f1 and f1 - best_f1 >= MIN_IMPROVEMENT)
-        log.append({"iter": it, "lever": lever, "f1": f1, "accepted": bool(ok)})
-        if ok: best_f1, rejects = f1, 0
+        f1, src = read_macro_f1(run_dir) if run_dir else (None, None)
+        # An unmeasurable run, or one scored on a different metric, is not
+        # evidence of improvement.
+        comparable = f1 is not None and (best_src is None or src == best_src)
+        ok = comparable and (best_f1 is None or f1 - best_f1 >= MIN_IMPROVEMENT)
+        log.append({"iter": it, "lever": lever, "f1": f1, "source": src,
+                    "accepted": bool(ok)})
+        if ok:
+            best_f1, best_src, best_run = f1, src, run_dir
+            weights, drop, lr = cand_w, cand_drop, cand_lr
+            rejects = 0
         else:
-            rejects += 1; li += 1
-            if rejects >= 2: break
+            # Keep the previous config: a rejected lever must not compound.
+            rejects += 1
+            li += 1
+            if rejects >= 2:
+                break
+    if best_run is not None:
+        # export() takes the newest checkpoint by mtime, which would otherwise be
+        # the last (possibly rejected) run rather than the best one.
+        ckpt = best_run / "checkpoints" / "model_best.pth"
+        if ckpt.exists():
+            # Stamping "now" can tie with a run that finished in the same clock
+            # tick; the sort is stable, so the tie resolves by scan order and the
+            # rejected run wins. Step past the newest peer instead.
+            import time
+
+            peers = [p.stat().st_mtime
+                     for p in paths.logs_dir(out, cfg.tissue).rglob(
+                         "checkpoints/model_best.pth")
+                     if p != ckpt]
+            stamp = max([time.time()] + [m + 1.0 for m in peers])
+            os.utime(ckpt, (stamp, stamp))
     (paths.report_dir(out, cfg.tissue)).mkdir(parents=True, exist_ok=True)
-    import json
     (paths.report_dir(out, cfg.tissue) / "tuning_log.jsonl").write_text(
-        "\n".join(json.dumps(x) for x in log))
-    return {"best_f1": best_f1, "iters": len(log)}
+        "".join(json.dumps(x) + "\n" for x in log))
+    return {"best_f1": best_f1, "iters": len(log),
+            "best_run": str(best_run) if best_run else None}

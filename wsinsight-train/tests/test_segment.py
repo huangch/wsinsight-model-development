@@ -1,6 +1,7 @@
 """Segmentation backends: GPU selection, mpp handling, resampling."""
 from __future__ import annotations
 
+import os
 import sys
 import types
 
@@ -41,6 +42,318 @@ def fake_cellpose(monkeypatch):
 
 def test_default_backend_is_stardist():
     assert segment.get_segmenter("stardist").name == "stardist"
+
+
+def test_stardist_loads_from_a_local_folder(monkeypatch):
+    """An offline model dir must bypass from_pretrained entirely."""
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            seen["name"] = name
+            seen["basedir"] = basedir
+
+        @staticmethod
+        def from_pretrained(name):
+            seen["downloaded"] = True
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+
+    seg = segment.get_segmenter("stardist", stardist_model="2D_versatile_he",
+                                stardist_model_dir="/models/StarDist2D")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["name"] == "2D_versatile_he"
+    assert seen["basedir"] == "/models/StarDist2D"
+    assert "downloaded" not in seen
+
+
+def test_stardist_downloads_when_no_folder_given(monkeypatch, tmp_path):
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
+        @staticmethod
+        def from_pretrained(name):
+            seen["downloaded"] = name
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    # Point the cache probe at an empty dir so the download path is taken.
+    monkeypatch.setattr(segment, "STARDIST_CACHE", tmp_path / "empty")
+
+    seg = segment.get_segmenter("stardist")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    assert seen["downloaded"] == "2D_versatile_he"
+
+
+def test_stardist_prefers_the_unpacked_cache(monkeypatch, tmp_path):
+    """csbdeep re-downloads even when the folder exists; use it directly."""
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            seen["basedir"] = basedir
+            seen["name"] = name
+
+        @staticmethod
+        def from_pretrained(name):
+            seen["downloaded"] = True
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    cache = tmp_path / "StarDist2D"
+    (cache / "2D_versatile_he").mkdir(parents=True)
+    (cache / "2D_versatile_he" / "config.json").write_text("{}")
+    monkeypatch.setattr(segment, "STARDIST_CACHE", cache)
+
+    seg = segment.get_segmenter("stardist")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["basedir"] == str(cache)
+    assert "downloaded" not in seen
+
+
+def test_explicit_dir_beats_the_cache(monkeypatch, tmp_path):
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            seen["basedir"] = basedir
+
+        @staticmethod
+        def from_pretrained(name):
+            seen["downloaded"] = True
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    cache = tmp_path / "StarDist2D"
+    (cache / "2D_versatile_he").mkdir(parents=True)
+    (cache / "2D_versatile_he" / "config.json").write_text("{}")
+    monkeypatch.setattr(segment, "STARDIST_CACHE", cache)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/explicit")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    assert seen["basedir"] == "/explicit"
+
+
+def test_stardist_cpu_hides_gpus_from_tensorflow_only(monkeypatch, tmp_path):
+    hidden = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    fake_tf = types.ModuleType("tensorflow")
+    fake_tf.config = types.SimpleNamespace(
+        set_visible_devices=lambda devs, kind: hidden.update({"kind": kind, "devs": devs}))
+    monkeypatch.setitem(sys.modules, "tensorflow", fake_tf)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/m", stardist_cpu=True)
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    assert hidden == {"kind": "GPU", "devs": []}
+
+
+def test_stardist_gpu_mode_does_not_touch_tensorflow_devices(monkeypatch):
+    hidden = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    fake_tf = types.ModuleType("tensorflow")
+    fake_tf.config = types.SimpleNamespace(
+        set_visible_devices=lambda devs, kind: hidden.update({"called": True}))
+    monkeypatch.setitem(sys.modules, "tensorflow", fake_tf)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/m")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    assert hidden == {}
+
+
+def test_missing_cuda_toolkit_gives_an_actionable_error(monkeypatch):
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
+        def predict_instances(self, img):
+            raise RuntimeError("libdevice not found at ./libdevice.10.bc")
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/m")
+    with pytest.raises(RuntimeError, match="--stardist-cpu"):
+        seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+
+def test_unrelated_errors_are_not_swallowed(monkeypatch):
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
+        def predict_instances(self, img):
+            raise ValueError("something else entirely")
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/m")
+    with pytest.raises(ValueError, match="something else"):
+        seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+
+# --------------------------------------------------------------------------
+# XLA CUDA shim
+# --------------------------------------------------------------------------
+
+def _fake_triton(monkeypatch, tmp_path, *, complete=True):
+    nvidia = tmp_path / "triton" / "backends" / "nvidia"
+    (nvidia / "bin").mkdir(parents=True)
+    (nvidia / "lib").mkdir(parents=True)
+    (nvidia / "bin" / "ptxas").write_text("#!/bin/true\n")
+    if complete:
+        (nvidia / "lib" / "libdevice.10.bc").write_bytes(b"\0")
+    mod = types.ModuleType("triton")
+    mod.__file__ = str(tmp_path / "triton" / "__init__.py")
+    monkeypatch.setitem(sys.modules, "triton", mod)
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "tmp"))
+    monkeypatch.delenv("XLA_FLAGS", raising=False)
+
+
+def test_shim_exposes_the_layout_xla_expects(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    shim = segment.configure_tensorflow_cuda()
+    assert shim is not None
+    root = __import__("pathlib").Path(shim)
+    assert (root / "bin" / "ptxas").exists()
+    assert (root / "nvvm" / "libdevice" / "libdevice.10.bc").exists()
+
+
+def test_shim_is_added_to_xla_flags(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    shim = segment.configure_tensorflow_cuda()
+    assert f"--xla_gpu_cuda_data_dir={shim}" in os.environ["XLA_FLAGS"]
+
+
+def test_memory_growth_is_enabled(monkeypatch, tmp_path):
+    """TF reserves most of the GPU on init; torch needs it for the train stage."""
+    _fake_triton(monkeypatch, tmp_path)
+    monkeypatch.delenv("TF_FORCE_GPU_ALLOW_GROWTH", raising=False)
+    segment.configure_tensorflow_cuda()
+    assert os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] == "true"
+
+
+def test_memory_growth_respects_an_override(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    monkeypatch.setenv("TF_FORCE_GPU_ALLOW_GROWTH", "false")
+    segment.configure_tensorflow_cuda()
+    assert os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] == "false"
+
+
+def test_existing_xla_flags_are_preserved(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    monkeypatch.setenv("XLA_FLAGS", "--foo=1")
+    segment.configure_tensorflow_cuda()
+    assert os.environ["XLA_FLAGS"].startswith("--foo=1")
+
+
+def test_user_supplied_cuda_dir_is_not_overridden(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    monkeypatch.setenv("XLA_FLAGS", "--xla_gpu_cuda_data_dir=/mine")
+    assert segment.configure_tensorflow_cuda() is None
+    assert os.environ["XLA_FLAGS"] == "--xla_gpu_cuda_data_dir=/mine"
+
+
+def test_shim_is_skipped_when_triton_is_incomplete(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path, complete=False)
+    assert segment.configure_tensorflow_cuda() is None
+
+
+def test_shim_is_skipped_without_triton(monkeypatch):
+    monkeypatch.setitem(sys.modules, "triton", None)
+    monkeypatch.delenv("XLA_FLAGS", raising=False)
+    assert segment.configure_tensorflow_cuda() is None
+
+
+def test_shim_is_idempotent(monkeypatch, tmp_path):
+    _fake_triton(monkeypatch, tmp_path)
+    first = segment.configure_tensorflow_cuda()
+    monkeypatch.delenv("XLA_FLAGS", raising=False)
+    assert segment.configure_tensorflow_cuda() == first
+
+
+def test_shim_repairs_a_dangling_symlink(monkeypatch, tmp_path):
+    """A triton reinstall can leave the old link pointing at nothing."""
+    import pathlib
+
+    _fake_triton(monkeypatch, tmp_path)
+    shim = pathlib.Path(segment.configure_tensorflow_cuda())
+
+    ptxas = shim / "bin" / "ptxas"
+    ptxas.unlink()
+    ptxas.symlink_to(tmp_path / "gone" / "ptxas")
+    assert ptxas.is_symlink() and not ptxas.exists()
+
+    monkeypatch.delenv("XLA_FLAGS", raising=False)
+    segment.configure_tensorflow_cuda()
+
+    assert ptxas.exists()
+
+
+def test_stardist_model_is_loaded_once(monkeypatch):
+    loads = []
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            loads.append(1)
+
+        @staticmethod
+        def from_pretrained(name):
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/models")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+    assert len(loads) == 1
+
+
+def _install_fake_stardist(monkeypatch, model_cls):
+    monkeypatch.setitem(sys.modules, "stardist", types.ModuleType("stardist"))
+    sd_models = types.ModuleType("stardist.models")
+    sd_models.StarDist2D = model_cls
+    monkeypatch.setitem(sys.modules, "stardist.models", sd_models)
+    csb = types.ModuleType("csbdeep")
+    csb_utils = types.ModuleType("csbdeep.utils")
+    csb_utils.normalize = lambda x: x
+    monkeypatch.setitem(sys.modules, "csbdeep", csb)
+    monkeypatch.setitem(sys.modules, "csbdeep.utils", csb_utils)
 
 
 def test_unknown_backend_raises():
@@ -117,24 +430,18 @@ def test_stardist_rescales_to_native_mpp(monkeypatch):
     seen = {}
 
     class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            pass
+
         @staticmethod
         def from_pretrained(name):
-            return FakeModel()
+            return FakeModel(None)
 
         def predict_instances(self, img):
             seen["shape"] = img.shape
             return np.zeros(img.shape[:2], np.int32), None
 
-    monkeypatch.setitem(sys.modules, "stardist", types.ModuleType("stardist"))
-    sd_models = types.ModuleType("stardist.models")
-    sd_models.StarDist2D = FakeModel
-    monkeypatch.setitem(sys.modules, "stardist.models", sd_models)
-
-    csb = types.ModuleType("csbdeep")
-    csb_utils = types.ModuleType("csbdeep.utils")
-    csb_utils.normalize = lambda x: x
-    monkeypatch.setitem(sys.modules, "csbdeep", csb)
-    monkeypatch.setitem(sys.modules, "csbdeep.utils", csb_utils)
+    _install_fake_stardist(monkeypatch, FakeModel)
 
     seg = segment.StarDistSegmenter()
     he = np.zeros((10, 10, 3), np.uint8)

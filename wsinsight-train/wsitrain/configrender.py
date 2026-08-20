@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 from string import Template
@@ -67,7 +68,9 @@ def render_config(cfg, out: Path, *, drop_rate: float = 0.1, lr: float = 0.00007
         CELLVIT_LOGS=str(log_dir),
         CELLVIT_WEIGHTS=_backbone_weights(cellvit, cfg.backbone),
         DROP_RATE=drop_rate, LR=lr, HASH_INFO=_split_hash(out, cfg), GPU_ID=_gpu_id(cfg),
-        LABEL_MAP="\n".join(f"    {i}: {label_map[i]}" for i in sorted(label_map)),
+        # json.dumps gives a valid YAML double-quoted scalar, so ':' and '#' in a
+        # cell-type name cannot break or silently truncate the config.
+        LABEL_MAP="\n".join(f"    {i}: {json.dumps(label_map[i])}" for i in sorted(label_map)),
         WEIGHTS="[" + ", ".join(f"{w:g}" for w in wlist) + "]")
     dst = paths.tissue_root(out, cfg.tissue) / "train_configs" / cfg.backbone / f"{cfg.fold}.yaml"
     dst.parent.mkdir(parents=True, exist_ok=True)

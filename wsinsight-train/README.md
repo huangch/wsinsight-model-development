@@ -50,7 +50,7 @@ wsitrain --version
 
 Training scope via `--tissue`: one (`breast`), subset (`breast,lung`), or all
 (`pantissue`). Stages: `annotate → segment → transfer → tile → split → train →
-validate → export`; bound with `--from/--to`, skip with `--skip`, resume via
+validate → export`; choose what to run with `--stage-only` / `--stage-skip`, resume via
 `manifest.json`.
 
 Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|sthelar_cancer_normal|

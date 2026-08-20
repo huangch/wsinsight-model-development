@@ -52,6 +52,19 @@ def test_plus_separated_tissue_list(tmp_path):
     assert len(dataset.discover_samples(tmp_path, "breast+lung")) == 2
 
 
+def test_tissue_list_accepts_spaces_and_stray_commas(tmp_path):
+    """A quoted shell variable arrives as one token: "breast lung".
+
+    Splitting on ',' alone made that match no directory, which surfaced as an
+    empty -- but not obviously wrong -- sample list rather than an error.
+    """
+    for t in ("breast", "lung", "skin"):
+        _sample_tree(tmp_path, t, "s1")
+    for sel in ("breast lung", "breast, lung", "breast,lung,", " breast , lung "):
+        got = {s.tissue for s in dataset.discover_samples(tmp_path, sel)}
+        assert got == {"breast", "lung"}, sel
+
+
 def test_registration_files_mark_sample_aligned(tmp_path):
     _sample_tree(tmp_path, "breast", "s1", he="{name}_he_unaligned_image.ome.tif", reg=True)
     assert dataset.discover_samples(tmp_path)[0].aligned is True
@@ -231,7 +244,7 @@ def test_subcommand_is_required():
 
 def test_invalid_stage_name_rejected(tmp_path):
     with pytest.raises(SystemExit):
-        main(["run", "--input", str(tmp_path), "--from", "bogus"])
+        main(["run", "--input", str(tmp_path), "--stage-skip", "bogus"])
 
 
 def test_invalid_segmenter_rejected(tmp_path):

@@ -5,7 +5,7 @@ Mechanism (fallback order):
      sample; pair the nearest sibling *_he_*image.ome.tif. Flag 'unaligned'.
   2. manifest: a samples.csv (sample_id,tissue,outs,he,aligned) that
      overrides/edits discovery. `check` writes one to eyeball.
-  3. BYO: skip discovery, enter at --from tiling.
+  3. BYO: skip discovery, run with --skip annotate segment transfer.
 
 Tissue is a pooling bucket, not a cell-type filter:
   --tissue breast    -> only samples under a breast/ path
@@ -42,11 +42,23 @@ def _tissue_of(rel: str) -> str:
     return rel.split("/", 1)[0] if "/" in rel else rel
 
 
+def _tissue_set(tissue: str) -> set[str]:
+    """Parse a multi-tissue selector.
+
+    Accepts ',', '+' and whitespace as separators. Whitespace matters: quoting
+    a shell variable turns ``--tissue breast lung`` into the single token
+    "breast lung", which would otherwise match no directory and yield an empty
+    -- but not obviously wrong -- sample list.
+    """
+    parts = {t.strip() for t in tissue.replace("+", ",").replace(" ", ",").split(",")}
+    return {t for t in parts if t}
+
+
 def discover_samples(input_dir: Path, tissue: str = "pantissue") -> list[Sample]:
     """Discover samples. tissue may be 'pantissue' (all), one tissue, or a
     comma list ('breast,lung') to pool a chosen subset."""
     input_dir = Path(input_dir)
-    wanted = None if tissue == "pantissue" else {t.strip() for t in tissue.replace("+", ",").split(",")}
+    wanted = None if tissue == "pantissue" else _tissue_set(tissue)
     samples: list[Sample] = []
     seen: set[Path] = set()
     for outs in sorted(input_dir.rglob("outs")):

@@ -9,7 +9,7 @@ import pytest
 
 from wsitrain import paths
 from wsitrain.dataset import Sample
-from wsitrain.stages import annotate, export, train, validate
+from wsitrain.stages import annotate, export, report, train, validate
 
 
 @pytest.fixture
@@ -45,8 +45,50 @@ def _sample(tmp_path, tissue="breast", name="s1") -> Sample:
 
 def test_annotate_requires_kurtorank(tmp_path, cfg_factory, monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda name: None)
-    with pytest.raises(RuntimeError, match="kurtorank not on PATH"):
+    with pytest.raises(RuntimeError, match="kurtorank is not on PATH"):
         annotate(cfg_factory(), [_sample(tmp_path)], tmp_path / "out")
+
+
+def test_annotate_noop_without_kurtorank_when_csvs_exist(tmp_path, cfg_factory, monkeypatch):
+    """An already-annotated dataset must not need kurtorank installed.
+
+    The PATH lookup used to run before the per-sample loop, so a finished
+    dataset still failed on a host that only had the training deps.
+    """
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    cfg = cfg_factory()
+    s = _sample(tmp_path)
+    (s.outs / f"celltype_assignment_{cfg.task}_label.csv").write_text("cell_id,label\n")
+    out = annotate(cfg, [s], tmp_path / "out")
+    assert out["n_samples"] == 1
+    assert out["assignments"] == [f"celltype_assignment_{cfg.task}_label.csv"]
+
+
+def test_assignment_csv_accepts_unsuffixed_name(tmp_path):
+    """kurtorank writes subtype/major/hne_type without the _label suffix.
+
+    Every sample on disk has celltype_assignment_subtype.csv, but the reader
+    only ever built celltype_assignment_<task>_label.csv, so those tasks could
+    never be trained.
+    """
+    from wsitrain.stages import assignment_csv
+    outs = tmp_path / "outs"
+    outs.mkdir()
+    assert assignment_csv(outs, "subtype") is None
+    plain = outs / "celltype_assignment_subtype.csv"
+    plain.write_text("classification,cell_type\n")
+    assert assignment_csv(outs, "subtype") == plain
+
+
+def test_assignment_csv_prefers_label_suffix(tmp_path):
+    """Where both spellings exist (pannuke on older runs) _label is current."""
+    from wsitrain.stages import assignment_csv
+    outs = tmp_path / "outs"
+    outs.mkdir()
+    (outs / "celltype_assignment_pannuke.csv").write_text("classification,cell_type\n")
+    labelled = outs / "celltype_assignment_pannuke_label.csv"
+    labelled.write_text("classification,cell_type\n")
+    assert assignment_csv(outs, "pannuke") == labelled
 
 
 def test_annotate_requires_samples(cfg_factory, kurtorank_on_path, tmp_path):
@@ -208,6 +250,40 @@ def test_export_returns_class_names(exportable, recorder):
     assert export(cfg, [], cfg.output)["classes"] == ["immune", "tumor"]
 
 
+# wsinsight/schemas/model-config.schema.json marks these required; a folder
+# missing any of them is rejected when wsinsight loads the model.
+WSINSIGHT_REQUIRED = ("num_classes", "patch_size_pixels", "spacing_um_px",
+                      "class_names", "transform")
+
+
+def _exported_config(cfg):
+    return json.loads(
+        (paths.models_dir(cfg.output, cfg.tissue) / "main" / "config.json").read_text())
+
+
+def test_export_satisfies_wsinsight_required_keys(exportable, recorder):
+    cfg = exportable
+    export(cfg, [], cfg.output)
+    doc = _exported_config(cfg)
+    assert [k for k in WSINSIGHT_REQUIRED if k not in doc] == []
+
+
+def test_export_transform_matches_the_zoo_contract(exportable, recorder):
+    cfg = exportable
+    export(cfg, [], cfg.output)
+    steps = _exported_config(cfg)["transform"]
+    assert [s["name"] for s in steps] == ["Resize", "ToTensor", "Normalize"]
+    assert steps[0]["arguments"]["size"] == cfg.tile_px
+    assert steps[2]["arguments"]["mean"] == [0.5, 0.5, 0.5]
+
+
+def test_export_class_names_are_unique(exportable, recorder):
+    cfg = exportable
+    export(cfg, [], cfg.output)
+    names = _exported_config(cfg)["class_names"]
+    assert len(names) == len(set(names)) == _exported_config(cfg)["num_classes"]
+
+
 def test_export_requires_a_trained_run(tmp_path, cfg_factory, monkeypatch, recorder):
     root = tmp_path / "cv"
     root.mkdir()
@@ -225,14 +301,12 @@ def test_export_requires_a_trained_run(tmp_path, cfg_factory, monkeypatch, recor
 # --------------------------------------------------------------------------
 
 def test_validate_requires_a_run(tmp_path, cfg_factory, monkeypatch):
-    pytest.importorskip("torch")
     monkeypatch.delenv("CELLVIT_ROOT", raising=False)
     with pytest.raises(RuntimeError, match="no trained run"):
         validate(cfg_factory(), [], tmp_path / "out")
 
 
 def test_validate_surfaces_scores(tmp_path, cfg_factory, monkeypatch):
-    pytest.importorskip("torch")
     monkeypatch.delenv("CELLVIT_ROOT", raising=False)
     cfg = cfg_factory()
     run = paths.logs_dir(cfg.output, cfg.tissue) / "run"
@@ -248,7 +322,6 @@ def test_validate_surfaces_scores(tmp_path, cfg_factory, monkeypatch):
 
 
 def test_validate_tolerates_missing_val_results(tmp_path, cfg_factory, monkeypatch):
-    pytest.importorskip("torch")
     monkeypatch.delenv("CELLVIT_ROOT", raising=False)
     cfg = cfg_factory()
     run = paths.logs_dir(cfg.output, cfg.tissue) / "run"
@@ -256,6 +329,16 @@ def test_validate_tolerates_missing_val_results(tmp_path, cfg_factory, monkeypat
     (run / "checkpoints" / "model_best.pth").write_text("w")
 
     assert validate(cfg, [], cfg.output)["metrics"] == {}
+
+
+def test_validate_reports_the_selected_run(tmp_path, cfg_factory, monkeypatch):
+    monkeypatch.delenv("CELLVIT_ROOT", raising=False)
+    cfg = cfg_factory()
+    run = paths.logs_dir(cfg.output, cfg.tissue) / "run"
+    (run / "checkpoints").mkdir(parents=True)
+    (run / "checkpoints" / "model_best.pth").write_text("w")
+
+    assert validate(cfg, [], cfg.output)["run_dir"] == str(run)
 
 
 def test_validate_plots_confusion_matrix(tmp_path, cfg_factory, monkeypatch):
@@ -277,3 +360,32 @@ def test_validate_plots_confusion_matrix(tmp_path, cfg_factory, monkeypatch):
     validate(cfg, [], cfg.output)
 
     assert (paths.report_dir(cfg.output, cfg.tissue) / "confusion_matrix.png").exists()
+
+
+# --------------------------------------------------------------------------
+# report
+# --------------------------------------------------------------------------
+
+def test_report_writes_a_summary(tmp_path, cfg_factory):
+    cfg = cfg_factory()
+    info = report(cfg, [], cfg.output)
+    assert (paths.report_dir(cfg.output, cfg.tissue) / "summary.txt").exists()
+    assert info["report_dir"] == str(paths.report_dir(cfg.output, cfg.tissue))
+
+
+def test_report_records_the_run_settings(tmp_path, cfg_factory):
+    cfg = cfg_factory(segmenter="cellpose", transform="none")
+    s = _sample(tmp_path)
+    report(cfg, [s, s], cfg.output)
+    text = (paths.report_dir(cfg.output, cfg.tissue) / "summary.txt").read_text()
+    assert "tissue: breast" in text
+    assert "samples: 2" in text
+    assert "segmenter: cellpose" in text
+    assert "transform: none" in text
+
+
+def test_report_is_idempotent(tmp_path, cfg_factory):
+    cfg = cfg_factory()
+    report(cfg, [], cfg.output)
+    report(cfg, [], cfg.output)
+    assert (paths.report_dir(cfg.output, cfg.tissue) / "summary.txt").exists()

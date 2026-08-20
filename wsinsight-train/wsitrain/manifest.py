@@ -19,6 +19,8 @@ _INVALIDATES: dict[str, str] = {
     "top_k_markers": "annotate",
     "segmenter": "segment",
     "cellpose_model": "segment",
+    "stardist_model": "segment",
+    "stardist_model_dir": "segment",
     "diameter": "segment",
     "cellpose_flow_threshold": "segment",
     # mpp sets the segmentation rescale factor, not just the tile geometry.

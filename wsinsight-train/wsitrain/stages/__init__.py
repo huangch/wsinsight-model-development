@@ -11,6 +11,13 @@ from .. import paths, splits as splits_mod, weights as weights_mod
 CONFUSION_CMAP = "Blues"
 
 
+def _write_label_map(path: Path, label_map: dict) -> None:
+    import json
+
+    path.write_text(
+        "".join(f"{i}: {json.dumps(label_map[i])}\n" for i in sorted(label_map)))
+
+
 def _run_tag(cfg) -> str:
     return f"{cfg.tissue}-{cfg.task}-{cfg.backbone.lower()}"
 
@@ -163,24 +170,54 @@ class SlideReader:
         self.close()
 
 
+def assignment_csv(outs: Path, task: str) -> Path | None:
+    """Locate a sample's cell-type assignment CSV, or None if absent.
+
+    kurtorank is inconsistent about the suffix: it writes ``pantissue``,
+    ``hne``, ``pannuke`` and the ``sthelar_*`` tasks as
+    ``celltype_assignment_<task>_label.csv`` but ``subtype``, ``major`` and
+    ``hne_type`` as ``celltype_assignment_<task>.csv``. Looking only for the
+    ``_label`` form made those three tasks unreachable even though every
+    sample had the data.
+
+    ``_label`` is tried first: where both exist (``pannuke`` on older runs)
+    the un-suffixed file is the legacy one.
+    """
+    for name in (f"celltype_assignment_{task}_label.csv",
+                 f"celltype_assignment_{task}.csv"):
+        p = Path(outs) / name
+        if p.exists():
+            return p
+    return None
+
+
 def annotate(cfg, samples, out: Path) -> dict[str, Any]:
     """KurtoRank annotate over every sample's outs/ → celltype_assignment CSV."""
     import shutil
     import subprocess
 
-    exe = shutil.which("kurtorank")
-    if exe is None:
-        raise RuntimeError("kurtorank not on PATH; pip install kurtorank")
     if not samples:
         raise RuntimeError(f"no samples discovered under {cfg.input}")
+
+    # Resolved lazily: a dataset that is already annotated must not require
+    # kurtorank on PATH just to confirm there is nothing to do.
+    exe = None
 
     done = []
     for s in samples:
         # Must be the current task's vocabulary; another task's CSV is not a substitute.
         wanted = f"celltype_assignment_{cfg.task}_label.csv"
-        if (Path(s.outs) / wanted).exists():
-            done.append(wanted)
+        found = assignment_csv(s.outs, cfg.task)
+        if found is not None:
+            done.append(found.name)
             continue
+        if exe is None:
+            exe = shutil.which("kurtorank")
+            if exe is None:
+                raise RuntimeError(
+                    f"{s.sample_id}: {wanted} is missing and kurtorank is not on "
+                    f"PATH. Install it (pip install kurtorank) or skip this stage "
+                    f"with --stage-skip annotate if the CSVs are provided another way.")
         # kurtorank needs a concrete tissue; cfg.tissue may be "pantissue" or a comma list.
         cmd = [exe, "annotate", "--xenium-dir", str(s.outs),
                "--tissue-type", s.tissue, "--output-dir", str(s.outs),
@@ -188,14 +225,15 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
         if cfg.markers_csv:
             cmd += ["--markers-csv", str(cfg.markers_csv)]
         subprocess.run(cmd, check=True)
-        if not (Path(s.outs) / wanted).exists():
+        found = assignment_csv(s.outs, cfg.task)
+        if found is None:
             # Silently continuing marks the stage done and resurfaces as a
             # FileNotFoundError in transfer, far from the real cause.
             raise RuntimeError(
                 f"{s.sample_id}: kurtorank annotate exited 0 but did not write "
                 f"{wanted} into {s.outs}. Check that --tissue-type {s.tissue!r} "
                 f"is a tissue kurtorank supports.")
-        done.append(wanted)
+        done.append(found.name)
     return {"n_samples": len(samples), "assignments": done}
 
 
@@ -216,7 +254,10 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     seg = get_segmenter(cfg.segmenter, cellpose_model=cfg.cellpose_model,
                         diameter=cfg.diameter, batch_size=cfg.cellpose_batch_size,
                         flow_threshold=cfg.cellpose_flow_threshold,
-                        gpu=gpu_mode)
+                        gpu=gpu_mode,
+                        stardist_model=cfg.stardist_model,
+                        stardist_model_dir=cfg.stardist_model_dir,
+                        stardist_cpu=cfg.stardist_cpu)
     mask_dir = out / "masks" / cfg.tissue
     mask_dir.mkdir(parents=True, exist_ok=True)
     counts = {}
@@ -289,7 +330,12 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         cells["cell_id"] = cells["cell_id"].map(
             lambda v: v.decode() if isinstance(v, (bytes, bytearray)) else v)
         cells = _nucleus_xy(outs, cells)
-        assign = pd.read_csv(outs / f"celltype_assignment_{cfg.task}_label.csv")
+        assign_path = assignment_csv(outs, cfg.task)
+        if assign_path is None:
+            raise RuntimeError(
+                f"{s.sample_id}: no celltype_assignment_{cfg.task}[_label].csv in "
+                f"{outs}. Run the annotate stage, or pick a --task whose CSV exists.")
+        assign = pd.read_csv(assign_path)
         cl = pd.read_csv(outs / "analysis/clustering/gene_expression_graphclust/clusters.csv")
         cl = cl.rename(columns={"Barcode": "cell_id", "Cluster": "classification"})
         m = cells.merge(cl, on="cell_id")
@@ -307,8 +353,9 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
             orphan = sorted(set(cl["classification"]) - set(assign["classification"]))
             raise RuntimeError(
                 f"{s.sample_id}: {lost:.1%} of cells fall in clusters {orphan} with no "
-                f"entry in celltype_assignment_{cfg.task}_label.csv. The assignment is "
-                f"stale relative to clusters.csv — rerun `wsitrain run --from annotate`.")
+                f"entry in {assign_path.name}. The assignment is "
+                f"stale relative to clusters.csv — rerun `wsitrain run` with "
+                f"--force.")
         if lost:
             print(f"[transfer] {s.sample_id}: {lost:.2%} of cells in unassigned clusters")
         return m.rename(columns={"x_centroid": "x_um", "y_centroid": "y_um", "cell_type": "label"})
@@ -371,8 +418,7 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     label_map = {i: n for i, n in enumerate(sorted(labels))}
     name_to_int = {v: k for k, v in label_map.items()}
     paths.tissue_root(out, cfg.tissue).mkdir(parents=True, exist_ok=True)
-    paths.label_map_path(out, cfg.tissue).write_text(
-        "\n".join(f'{i}: "{n}"' for i, n in label_map.items()) + "\n")
+    _write_label_map(paths.label_map_path(out, cfg.tissue), label_map)
 
     counts, rates, dropped = {}, {}, []
     conflicts, used = {}, set()
@@ -414,8 +460,7 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         remap = {old: new for new, old in enumerate(sorted(used))}
         ghosts = [label_map[k] for k in sorted(set(label_map) - used)]
         label_map = {new: label_map[old] for old, new in remap.items()}
-        paths.label_map_path(out, cfg.tissue).write_text(
-            "\n".join(f'{i}: "{n}"' for i, n in sorted(label_map.items())) + "\n")
+        _write_label_map(paths.label_map_path(out, cfg.tissue), label_map)
         for sid in counts:
             p = nuc_dir / f"{sid}.csv"
             t = pd.read_csv(p)
@@ -551,10 +596,10 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
             metrics = json.load(f)
 
     # --- confusion matrix from stored tensors --------------------------------
-    import torch
     pred_pt = val_results_dir / "predictions.pt"
     gt_pt   = val_results_dir / "gt.pt"
     if pred_pt.exists() and gt_pt.exists():
+        import torch
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
@@ -621,6 +666,14 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
         "num_classes": len(class_names), "class_names": class_names,
         "patch_size_pixels": cfg.tile_px, "halo_size_pixels": 0,
         "spacing_um_px": cfg.mpp,
+        # Required by wsinsight's model-config schema; mirrors the shipped
+        # zoo/huangch/CellViT-SAM-H-x40 config.
+        "transform": [
+            {"name": "Resize", "arguments": {"size": cfg.tile_px}},
+            {"name": "ToTensor"},
+            {"name": "Normalize",
+             "arguments": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
+        ],
         "backbone": cfg.backbone,
         "stain_normalization": False, "object_based": True,
         "mixed_precision": False, "object_detection": {"name": "end2end"},

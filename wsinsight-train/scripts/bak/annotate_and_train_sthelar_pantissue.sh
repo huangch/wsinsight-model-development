@@ -40,15 +40,10 @@ TOPK="${TOPK:-25}"
 
 WORK="$(mktemp -d)"
 FARM="$WORK/xenium_no_${EXCLUDE}"
-CFG="$WORK/run_sthelar.yaml"
 trap 'rm -rf "$WORK"' EXIT
 
-# STHELAR labels and lcp_* tags exist in markers-v6; wsitrain has no --markers-csv flag,
-# so pass them (plus top-k truncation) through a --config override file.
-cat > "$CFG" <<YAML
-markers_csv: $MARKERS
-top_k_markers: $TOPK
-YAML
+# STHELAR labels and lcp_* tags exist in markers-v6.
+MARKER_FLAGS=(--markers-csv "$MARKERS" --top-k-markers "$TOPK")
 
 # Enumerate top-level tissue folders that actually contain a sample, minus heart.
 mapfile -t TISSUES < <(
@@ -75,8 +70,8 @@ for t in "${TISSUES[@]}"; do
     --input "$FARM" \
     --tissue "$t" \
     --task "$TASK" \
-    --config "$CFG" \
-    --from annotate --to annotate
+    "${MARKER_FLAGS[@]}" \
+    --stage-only annotate
 done
 
 # ---------------------------------------------------------------------------
@@ -99,10 +94,10 @@ wsitrain run \
   --input "$FARM" \
   --tissue pantissue \
   --task "$TASK" \
-  --config "$CFG" \
-  --segmenter cellpose \
+  "${MARKER_FLAGS[@]}" \
+  --segmenter "${SEGMENTER:-stardist}" \
   --transform affine \
   --output "$OUT" \
-  --from segment --to export
+  --stage-skip annotate report
 
 echo "Done. Head + report under: $OUT/models/pantissue/  +  $OUT/report/pantissue/"

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Full-cycle: annotate (kurtorank markers-v5, STHELAR label) -> segment ->
-# transfer -> tile -> split -> train -> validate -> export, for breast+lung.
-# Trained head + report land under cellvit-training/models/<tissue>/.
+# Full-cycle pooled breast+lung training: annotate (kurtorank) -> segment ->
+# transfer -> tile -> split -> train -> validate -> export.
+# Trained head + report land under models/<tissue>/.
 #
-# Usage: bash pipeline/train_breast_lung.sh
-# Env:   set ENVBIN to a conda env bin with wsitrain+cellpose+kurtorank+torch.
+# Usage: bash scripts/train_breast_lung.sh [input_dir] [tissue_scope]
+# Env:   TASK, TUNE, SEGMENTER, CP_BATCH, CP_FLOW; ENVBIN = conda env bin with
+#        wsitrain+cellpose+kurtorank+torch.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -22,22 +23,24 @@ mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 INPUT="${1:-$ROOT/data/xenium}"
 TISSUE="${2:-breast,lung}"
 TASK="${TASK:-pannuke}"                                 # PanNuke label space (transfer appends _label.csv)
+TUNE="${TUNE:-0}"
+SEGMENTER="${SEGMENTER:-stardist}"
 OUT="$ROOT/models"                                   # all run outputs under models/
 
 echo "== preflight (warnings non-fatal; unaligned samples are skipped) =="
 wsitrain check --input "$INPUT" --tissue "$TISSUE" || true
 
-echo "== full cycle ($TISSUE) =="
+echo "== full cycle ($TISSUE, segmenter=$SEGMENTER, tune=$TUNE) =="
 wsitrain run \
   --input "$INPUT" \
   --tissue "$TISSUE" \
   --task "$TASK" \
-  --segmenter cellpose \
+  --segmenter "$SEGMENTER" \
   --cellpose-batch-size "${CP_BATCH:-4}" \
   --cellpose-flow-threshold "${CP_FLOW:-0}" \
-  --transform affine+bspline \
+  --transform affine \
   --output "$OUT" \
-  --from annotate --to export \
-  --tune 6
+  --stage-skip report \
+  --tune "$TUNE"
 
 echo "Done. Head + report under: $OUT/models/$TISSUE/  +  $OUT/report/$TISSUE/"

@@ -2614,6 +2614,11 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
         ).set_index("classification")
 
     # Keys double as wsitrain --task names: it reads celltype_assignment_<task>_label.csv.
+    # NOTE: the three QuST-legacy outputs below (subtype, major, hne_type) are
+    # written WITHOUT the _label suffix, so they do not follow that pattern.
+    # wsitrain falls back to celltype_assignment_<task>.csv for them; do not
+    # rename these without updating wsitrain.stages.assignment_csv and the
+    # already-annotated samples on disk.
     sthelar_assignments = {
         "sthelar_full": _cluster_assignment("cell_sthelar_full_label"),
         "sthelar_coarse": _cluster_assignment("cell_sthelar_coarse_label"),
@@ -2879,6 +2884,11 @@ def main(
     ensure_dir(output_dir)
     
     annotated_path = output_dir / "annotated.h5ad"
+    # Only the unconditional outputs belong here. The sthelar_* and lcp CSVs
+    # are written solely when the matching cell_*_label column exists in the
+    # panel, so listing them made csv_missing permanently non-empty on every
+    # other dataset — each rerun then regenerated all plots and CSVs and the
+    # "already annotated" fast path could never be taken.
     expected_csvs = [
         output_dir / "celltype_assignment_subtype.csv",
         output_dir / "celltype_assignment_major.csv",
@@ -2886,9 +2896,6 @@ def main(
         output_dir / "celltype_assignment_hne_type.csv",
         output_dir / "celltype_assignment_hne_label.csv",
         output_dir / "celltype_assignment_pantissue_label.csv",
-        output_dir / "celltype_assignment_sthelar_full_label.csv",
-        output_dir / "celltype_assignment_sthelar_coarse_label.csv",
-        output_dir / "celltype_assignment_sthelar_cancer_normal_label.csv",
     ]
 
     annotated_exists = annotated_path.exists()

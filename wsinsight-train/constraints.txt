@@ -1,0 +1,89 @@
+# constraints.txt for wsinsight-train
+#
+# Mirrors the pinned sets in wsinsight/constraints.txt and
+# sptxinsight/constraints.txt so all four packages share one working env.
+# Do not bump anything here independently of those repos.
+#
+# ALWAYS install with this file:
+#     pip install -c constraints.txt -e .
+# A bare `pip install -e .` will drift the CUDA stack (see the cu12/cu13 note).
+
+# --- the coexistence pins -------------------------------------------------
+# numpy<2 is enforced by wsinsight/sptxinsight/kurtorank/wsitrain themselves and
+# by the zarr<3 / anndata<0.13 generation. stardist 0.9.2 accepts numpy<3, so it
+# is no longer the binding reason.
+numpy<2.0.0
+protobuf==6.32.1
+ml_dtypes==0.5.3
+h5py==3.15.0
+# setuptools>=81 removes pkg_resources. stardist 0.9.2 no longer imports it, but
+# other packages in this env still do (imageio, tensorboard, werkzeug, pytz, ...).
+setuptools<67.0.0
+
+# --- TensorFlow / StarDist ------------------------------------------------
+tensorflow==2.20.0
+keras==3.11.3
+stardist==0.9.2
+# 0.8.2 is the floor stardist 0.9.2 requires; they move together.
+csbdeep==0.8.2
+
+# --- PyTorch / CellViT ----------------------------------------------------
+# torch pulls in triton, which supplies the ptxas + libdevice that TensorFlow's
+# XLA needs on hosts without a system CUDA toolkit.
+torch==2.8.0
+torchvision==0.23.0
+
+# --- CUDA runtime wheels (must match torch) -------------------------------
+# These are the CUDA 12 wheels. torch>=2.9 pulls the CUDA 13 set instead
+# (cuda-toolkit, nvidia-*-cu13), which unpacks over the same nvidia/cudnn/lib
+# directory and leaves TensorFlow loading a cuDNN it was not built against.
+nvidia-cublas-cu12==12.8.4.1
+nvidia-cuda-cupti-cu12==12.8.90
+nvidia-cuda-nvrtc-cu12==12.8.93
+nvidia-cuda-runtime-cu12==12.8.90
+nvidia-cudnn-cu12==9.10.2.21
+nvidia-cufft-cu12==11.3.3.83
+nvidia-cufile-cu12==1.13.1.3
+nvidia-curand-cu12==10.3.9.90
+nvidia-cusolver-cu12==11.7.3.90
+nvidia-cusparse-cu12==12.5.8.93
+nvidia-cusparselt-cu12==0.7.1
+nvidia-nccl-cu12==2.27.3
+nvidia-nvjitlink-cu12==12.8.93
+nvidia-nvtx-cu12==12.8.90
+
+# --- kurtorank's AnnData stack (shared env) -------------------------------
+# Must match wsinsight/sptxinsight: capping at <0.12 here silently DOWNGRADED a
+# working env from 0.12.19 to 0.11.4, and 0.12 is required to read h5ad files
+# written in the 0.12 format. Nothing in the dependency tree actually asks for
+# <0.12 (scanpy >=0.8, squidpy >=0.9, spatialdata >=0.9.1, tiledbsoma >=0.10.1).
+anndata>=0.11,<0.13
+zarr<3                 # zarr 3.x requires numpy>=2
+xarray<2025
+scanpy<1.11            # last numpy<2-compatible release
+squidpy<1.7
+spatialdata>=0.4,<0.5
+spatialdata-io>=0.6,<0.7
+
+# --- dask / fsspec family -------------------------------------------------
+# wsinsight needs dask<2024.11.0; kurtorank accepts >=2024.10.0. 2024.10.0 is
+# the only version both allow.
+dask==2024.10.0
+dask-expr==1.1.16
+distributed==2024.10.0
+fsspec==2025.9.0
+s3fs==2025.9.0
+gcsfs==2025.9.0
+aiobotocore==2.26.0
+# Tracks the boto3 1.41.x generation sptxinsight requires. aiobotocore 2.25.0
+# demands botocore<1.40.50, which leaves boto3 1.41.x with an unsatisfiable
+# botocore requirement in the shared env.
+boto3==1.41.5
+botocore==1.41.5
+
+# --- remaining direct deps ------------------------------------------------
+# transfer reads Xenium parquet; wsinsight pins the same version.
+pyarrow==21.0.0
+# cellpose is the alternative --segmenter. Left unpinned it resolves to the
+# newest 4.x, which asks for a newer torch and drags the CUDA 13 wheels in.
+cellpose==4.2.1.1

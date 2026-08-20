@@ -5,8 +5,8 @@ here is relative to the run's output directory, so wsinsight-train is fully
 portable and never writes into its own install tree. Workdir layout:
 
     <output>/
-      run.yaml              resolved config
-      manifest.json         per-stage status + provenance
+      run-<tissue>.yaml      resolved config
+      manifest-<tissue>.json per-stage status + provenance
       trainingset/<tissue>/ label_map.yaml, train/{images,labels}, splits/, train_configs/
       models/<tissue>/      promoted head + side-car
       report/<tissue>/      confusion + classification report
@@ -14,6 +14,10 @@ portable and never writes into its own install tree. Workdir layout:
 from __future__ import annotations
 
 from pathlib import Path
+
+
+def _slug(tissue: str) -> str:
+    return tissue.replace("/", "_").replace(" ", "_")
 
 
 def tissue_root(out: Path, tissue: str) -> Path:
@@ -48,9 +52,11 @@ def logs_dir(out: Path, tissue: str) -> Path:
     return out / "logs" / tissue
 
 
-def manifest_path(out: Path) -> Path:
-    return out / "manifest.json"
+def manifest_path(out: Path, tissue: str) -> Path:
+    # Every other artifact is per-tissue; a shared manifest makes a second
+    # tissue in the same --output skip every stage as "already done".
+    return out / f"manifest-{_slug(tissue)}.json"
 
 
-def resolved_config_path(out: Path) -> Path:
-    return out / "run.yaml"
+def resolved_config_path(out: Path, tissue: str) -> Path:
+    return out / f"run-{_slug(tissue)}.yaml"

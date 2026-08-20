@@ -51,6 +51,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+  "sphinx",
+  "pydata-sphinx-theme",
+  "sphinx-autoapi",
+  "sphinx-click",
+  "sphinx-copybutton",
+]
 # Only `rank` and the `marker-*` commands touch Census; conda-setup.sh gates the
 # same two packages behind -c/--census and tolerates their failure.
 census = [

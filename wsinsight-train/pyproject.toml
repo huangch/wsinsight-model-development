@@ -29,6 +29,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+  "sphinx",
+  "pydata-sphinx-theme",
+  "sphinx-autoapi",
+  "sphinx-click",
+  "sphinx-copybutton",
+]
 stardist = ["stardist", "tensorflow"]
 # zarr lets the tile stage read windows instead of whole slides.
 lowmem = ["zarr"]

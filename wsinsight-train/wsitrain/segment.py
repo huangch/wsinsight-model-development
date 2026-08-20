@@ -140,13 +140,21 @@ class StarDistSegmenter:
         self._model = None  # lazy: loaded once, reused across slides
 
     def _load(self):
-        if self.cpu:
-            import tensorflow as tf
-            # Scoped to TensorFlow: torch (and the CellViT subprocess) keep the GPU.
-            tf.config.set_visible_devices([], "GPU")
-        else:
-            configure_tensorflow_cuda()
-        from stardist.models import StarDist2D  # lazy
+        try:
+            if self.cpu:
+                import tensorflow as tf
+                # Scoped to TensorFlow: torch (and the CellViT subprocess) keep the GPU.
+                tf.config.set_visible_devices([], "GPU")
+            else:
+                configure_tensorflow_cuda()
+            from stardist.models import StarDist2D  # lazy
+        except ImportError as exc:
+            # stardist is the default segmenter but ships in an extra.
+            raise RuntimeError(
+                "The stardist segmenter needs stardist + tensorflow, which are "
+                "not installed. Install them with `pip install 'wsitrain[stardist]'` "
+                "(or run conda-setup.sh), or pass --segmenter cellpose."
+            ) from exc
         basedir = self.model_dir or _cached_stardist_dir(self.model_name)
         if basedir:
             # csbdeep layout: <basedir>/<name>/{config.json,weights_best.h5}

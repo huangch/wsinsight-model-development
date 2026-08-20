@@ -156,11 +156,16 @@ class StarDistSegmenter:
         """Tile count that keeps one network pass near a training batch.
 
         Mirrors StarDist's own heuristic but off the public config rather than
-        the private _guess_n_tiles.
+        the private _guess_n_tiles. Falls back to StarDist's 512 px training
+        patch for any model that exposes no usable config.
         """
-        cfg = self._model.config
-        b = float(cfg.train_batch_size) ** (1.0 / cfg.n_dim)
-        py, px = cfg.train_patch_size[0], cfg.train_patch_size[1]
+        cfg = getattr(self._model, "config", None)
+        try:
+            b = float(cfg.train_batch_size) ** (1.0 / int(cfg.n_dim))
+            py = float(cfg.train_patch_size[0])
+            px = float(cfg.train_patch_size[1])
+        except Exception:
+            b, py, px = 1.0, 512.0, 512.0
         return (max(int(np.ceil(h / (py * b))), 1),
                 max(int(np.ceil(w / (px * b))), 1), 1)
 
@@ -182,8 +187,14 @@ class StarDistSegmenter:
                     n_tiles=self._n_tiles(self.big_px, self.big_px),
                     show_progress=False, show_tile_progress=False)
             else:
-                labels, _ = self._model.predict_instances(
-                    norm, n_tiles=self._n_tiles(h, w), show_tile_progress=False)
+                n_tiles = self._n_tiles(h, w)
+                if n_tiles == (1, 1, 1):
+                    # One tile is already the default; omitting the kwargs keeps
+                    # this working against any predict_instances signature.
+                    labels, _ = self._model.predict_instances(norm)
+                else:
+                    labels, _ = self._model.predict_instances(
+                        norm, n_tiles=n_tiles, show_tile_progress=False)
         except Exception as exc:
             if not self.cpu and any(h_ in str(exc).lower() for h_ in _TF_GPU_HINTS):
                 raise RuntimeError(

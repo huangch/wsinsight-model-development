@@ -25,7 +25,7 @@ h5py==3.15.0
 # written in the 0.12 format. Nothing in the dependency tree actually asks for
 # <0.12 (scanpy >=0.8, squidpy >=0.9, spatialdata >=0.9.1, tiledbsoma >=0.10.1).
 anndata>=0.11,<0.13
-zarr<3                 # zarr 3.x requires numpy>=2
+zarr==2.18.7                 # zarr 3.x requires numpy>=2
 xarray<2025
 scanpy<1.11            # last numpy<2-compatible release
 squidpy<1.7
@@ -69,3 +69,17 @@ nvidia-cusparselt-cu12==0.7.1
 nvidia-nccl-cu12==2.27.3
 nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvtx-cu12==12.8.90
+
+# --- remaining direct deps from pyproject.toml -----------------------------
+# Same versions as the shared wsinsight env.
+click==8.3.0
+matplotlib==3.10.7
+pandas==2.3.3
+scipy==1.16.2
+seaborn==0.13.2
+statsmodels==0.14.6
+tqdm==4.67.1
+
+# --- census extra (rank / marker-* only) -----------------------------------
+cellxgene-census==1.18.0
+tiledbsoma==2.3.0

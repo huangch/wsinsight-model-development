@@ -123,7 +123,8 @@ class StarDistSegmenter:
     native_mpp = 0.25
     # Above this side length the slide is predicted block-wise. A whole slide in
     # one pass asks for a single convolution over the full frame: a 37k x 57k
-    # slide needs a 24 GiB activation, which OOMs even an 80 GB A100.
+    # slide needs a 24 GiB activation, which OOMs even an 80 GB A100. One block
+    # peaks near 7 GiB, so this is the only memory knob: lower it for small GPUs.
     big_px = 4096
     # StarDist warns below ~94 px for this model's receptive field.
     big_context = 128
@@ -152,23 +153,6 @@ class StarDistSegmenter:
             return StarDist2D(None, name=self.model_name, basedir=str(basedir))
         return StarDist2D.from_pretrained(self.model_name)
 
-    def _n_tiles(self, h: int, w: int) -> tuple[int, int, int]:
-        """Tile count that keeps one network pass near a training batch.
-
-        Mirrors StarDist's own heuristic but off the public config rather than
-        the private _guess_n_tiles. Falls back to StarDist's 512 px training
-        patch for any model that exposes no usable config.
-        """
-        cfg = getattr(self._model, "config", None)
-        try:
-            b = float(cfg.train_batch_size) ** (1.0 / int(cfg.n_dim))
-            py = float(cfg.train_patch_size[0])
-            px = float(cfg.train_patch_size[1])
-        except Exception:
-            b, py, px = 1.0, 512.0, 512.0
-        return (max(int(np.ceil(h / (py * b))), 1),
-                max(int(np.ceil(w / (px * b))), 1), 1)
-
     def segment(self, he_rgb: np.ndarray, *, mpp: float) -> np.ndarray:
         from csbdeep.utils import normalize  # lazy
         if self._model is None:
@@ -184,17 +168,12 @@ class StarDistSegmenter:
                 labels, _ = self._model.predict_instances_big(
                     norm, axes="YXC", block_size=self.big_px,
                     min_overlap=self.big_min_overlap, context=self.big_context,
-                    n_tiles=self._n_tiles(self.big_px, self.big_px),
+                    # block_size already caps the activation, so tiling within a
+                    # block would only re-run the network over the same pixels.
+                    n_tiles=(1, 1, 1),
                     show_progress=False, show_tile_progress=False)
             else:
-                n_tiles = self._n_tiles(h, w)
-                if n_tiles == (1, 1, 1):
-                    # One tile is already the default; omitting the kwargs keeps
-                    # this working against any predict_instances signature.
-                    labels, _ = self._model.predict_instances(norm)
-                else:
-                    labels, _ = self._model.predict_instances(
-                        norm, n_tiles=n_tiles, show_tile_progress=False)
+                labels, _ = self._model.predict_instances(norm)
         except Exception as exc:
             if not self.cpu and any(h_ in str(exc).lower() for h_ in _TF_GPU_HINTS):
                 raise RuntimeError(

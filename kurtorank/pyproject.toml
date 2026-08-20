@@ -48,11 +48,15 @@ dependencies = [
   "seaborn",
   "click",
   "tqdm",
-  "cellxgene-census",
-  "tiledbsoma",
 ]
 
 [project.optional-dependencies]
+# Only `rank` and the `marker-*` commands touch Census; conda-setup.sh gates the
+# same two packages behind -c/--census and tolerates their failure.
+census = [
+  "cellxgene-census",
+  "tiledbsoma",
+]
 dev = [
   "pytest",
   "pytest-cov",

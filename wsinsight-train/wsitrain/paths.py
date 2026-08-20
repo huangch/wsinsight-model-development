@@ -44,6 +44,10 @@ def report_dir(out: Path, tissue: str) -> Path:
     return out / "report" / tissue
 
 
+def logs_dir(out: Path, tissue: str) -> Path:
+    return out / "logs" / tissue
+
+
 def manifest_path(out: Path) -> Path:
     return out / "manifest.json"
 

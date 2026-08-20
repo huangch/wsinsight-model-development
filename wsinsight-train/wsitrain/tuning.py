@@ -71,10 +71,10 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     import subprocess
     from pathlib import Path
     from . import configrender, paths, weights as weights_mod
+    from .stages import _find_run_dir
 
-    logs = Path(cellvit) / "logs_local"
-    rd = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
-    best_f1 = read_macro_f1(rd[-1].parent.parent) if rd else None
+    run_dir = _find_run_dir(cfg, out, required=False)
+    best_f1 = read_macro_f1(run_dir) if run_dir else None
     # Seed with the default inverse-frequency weights so the "weight" lever has a
     # real per-class vector to boost (was None -> list(None) TypeError on iter 1).
     _rep = weights_mod.compute_weights(
@@ -84,7 +84,7 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     li, rejects, log = 0, 0, []
     for it in range(cfg.tune):
         lever = LEVERS[li % len(LEVERS)]
-        weak = weakest_class(rd[-1].parent.parent) if rd else None
+        weak = weakest_class(run_dir) if run_dir else None
         weights, drop, lr = apply_lever(lever, weights, drop, lr, weak)
         cp = configrender.render_config(cfg, out, drop_rate=drop, lr=lr, weights=weights)
         import os as _os
@@ -95,8 +95,8 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
              "--config", str(cp)],
             cwd=cellvit, env=_env, check=True,
         )
-        rd = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
-        f1 = read_macro_f1(rd[-1].parent.parent)
+        run_dir = _find_run_dir(cfg, out, required=False)
+        f1 = read_macro_f1(run_dir) if run_dir else None
         ok = best_f1 is None or (f1 and f1 - best_f1 >= MIN_IMPROVEMENT)
         log.append({"iter": it, "lever": lever, "f1": f1, "accepted": bool(ok)})
         if ok: best_f1, rejects = f1, 0

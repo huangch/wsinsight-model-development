@@ -3,9 +3,9 @@
 # `input`, `tissue` and `output` are always supplied on the command line.
 
 # segmentation
-segmenter: cellpose          # cellpose | stardist
+segmenter: stardist          # cellpose | stardist
 cellpose_model: cpsam
-diameter: null               # null => auto
+diameter: null               # nucleus diameter in MICRONS; null => auto
 cellpose_batch_size: 8       # tile batch; lower (4/2) if GPU OOMs
 cellpose_flow_threshold: 0.0 # 0 = skip GPU flow QC (avoids whole-slide OOM)
 

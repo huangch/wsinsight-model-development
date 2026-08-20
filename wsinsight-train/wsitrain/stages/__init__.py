@@ -15,18 +15,43 @@ from .. import paths, splits as splits_mod, weights as weights_mod
 CONFUSION_CMAP = "Blues"
 
 
-def read_he_rgb(path) -> "Any":
-    """Read a WSI as (H, W, 3) uint8 regardless of how the vendor stored the axes.
+def _run_tag(cfg) -> str:
+    return f"{cfg.tissue}-{cfg.task}-{cfg.backbone.lower()}"
 
-    Several Xenium H&E exports are CYX, so ``shape[:2]`` silently yields (3, H).
+
+def _find_run_dir(cfg, out: Path, *, required: bool = True):
+    """Newest CellViT run belonging to THIS tissue/task/backbone.
+
+    The shared ``$CELLVIT_ROOT/logs_local`` tree holds every run ever trained, so
+    picking the globally newest checkpoint pairs one tissue's weights with
+    another's label_map. Prefer the per-tissue log root; fall back to the shared
+    tree only for runs whose directory carries this run's log_comment.
     """
-    import numpy as np
-    import tifffile
+    import os
 
-    with tifffile.TiffFile(str(path)) as tf:
-        ser = tf.series[0]
-        axes = ser.axes
-        arr = ser.asarray()
+    tag = _run_tag(cfg)
+    roots = [(paths.logs_dir(out, cfg.tissue), False)]
+    cellvit = os.environ.get("CELLVIT_ROOT")
+    if cellvit:
+        roots.append((Path(cellvit) / "logs_local", True))
+    for root, needs_tag in roots:
+        if not root.is_dir():
+            continue
+        cands = sorted(root.rglob("checkpoints/model_best.pth"),
+                       key=lambda p: p.stat().st_mtime)
+        if needs_tag:
+            cands = [p for p in cands if tag in str(p).lower()]
+        if cands:
+            return cands[-1].parent.parent
+    if required:
+        raise RuntimeError(f"no trained run for {tag!r}; run the train stage first")
+    return None
+
+
+def _to_rgb8(arr, axes: str):
+    """Normalise a raw array (or window of one) to (H, W, 3) uint8."""
+    import numpy as np
+
     if axes.startswith("C") or axes.startswith("S"):
         arr = np.moveaxis(arr, 0, -1)
     arr = np.atleast_3d(arr)[..., :3]
@@ -37,6 +62,109 @@ def read_he_rgb(path) -> "Any":
         hi = float(info.max) if info else float(arr.max() or 1)
         arr = (arr.astype(np.float32) / hi * 255).clip(0, 255).astype(np.uint8)
     return np.ascontiguousarray(arr)
+
+
+def read_he_rgb(path) -> "Any":
+    """Read a WSI as (H, W, 3) uint8 regardless of how the vendor stored the axes.
+
+    Several Xenium H&E exports are CYX, so ``shape[:2]`` silently yields (3, H).
+    """
+    import tifffile
+
+    with tifffile.TiffFile(str(path)) as tf:
+        ser = tf.series[0]
+        return _to_rgb8(ser.asarray(), ser.axes)
+
+
+class SlideReader:
+    """Windowed WSI access.
+
+    Tiling only ever needs one tile at a time, but a full-resolution slide is
+    tens of gigabytes once decoded. When zarr is available the pixels stay on
+    disk and each window is decoded on demand; otherwise this degrades to a
+    single full read, matching the previous behaviour.
+    """
+
+    def __init__(self, path):
+        import tifffile
+
+        self._tf = tifffile.TiffFile(str(path))
+        series = self._tf.series[0]
+        self.axes = series.axes
+        self._store = None
+        self._arr = None
+        try:
+            self._z = self._open_lazy(series)
+        except Exception:
+            self._z = None
+        if self._z is None:
+            self._arr = _to_rgb8(series.asarray(), self.axes)
+            self._close_handles()
+
+        shape = self._arr.shape if self._z is None else self._z.shape
+        if self._z is not None and self._channel_first:
+            self.height, self.width = int(shape[1]), int(shape[2])
+        else:
+            self.height, self.width = int(shape[0]), int(shape[1])
+
+    def _open_lazy(self, series):
+        """Full-resolution sliceable array backed by the file, or None.
+
+        Isolated so the windowing logic can be exercised without zarr; note
+        ``series.aszarr()`` imports zarr itself, so both halves need it.
+        """
+        import zarr
+
+        self._store = series.aszarr()
+        return self._full_res(zarr.open(self._store, mode="r"))
+
+    @staticmethod
+    def _full_res(node):
+        """Level 0 of a pyramidal OME-TIFF group, or the node itself."""
+        if hasattr(node, "shape"):
+            return node
+        levels = sorted(node.array_keys(), key=lambda k: int(k))
+        return node[levels[0]]
+
+    @property
+    def _channel_first(self) -> bool:
+        return self.axes.startswith("C") or self.axes.startswith("S")
+
+    @property
+    def lazy(self) -> bool:
+        return self._z is not None
+
+    def window(self, y0: int, x0: int, h: int, w: int):
+        import numpy as np
+
+        if self._z is None:
+            return self._arr[y0:y0 + h, x0:x0 + w]
+        if self._channel_first:
+            raw = self._z[:, y0:y0 + h, x0:x0 + w]
+        else:
+            raw = self._z[y0:y0 + h, x0:x0 + w]
+        return _to_rgb8(np.asarray(raw), self.axes)
+
+    def _close_handles(self):
+        for attr in ("_store", "_tf"):
+            handle = getattr(self, attr, None)
+            if handle is not None:
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+                setattr(self, attr, None)
+
+    def close(self):
+        self._z = None
+        self._arr = None
+        self._close_handles()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
 
 
 def annotate(cfg, samples, out: Path) -> dict[str, Any]:
@@ -64,20 +192,33 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
         if cfg.markers_csv:
             cmd += ["--markers-csv", str(cfg.markers_csv)]
         subprocess.run(cmd, check=True)
-        done.append(wanted if (Path(s.outs) / wanted).exists() else "MISSING")
+        if not (Path(s.outs) / wanted).exists():
+            # Silently continuing marks the stage done and resurfaces as a
+            # FileNotFoundError in transfer, far from the real cause.
+            raise RuntimeError(
+                f"{s.sample_id}: kurtorank annotate exited 0 but did not write "
+                f"{wanted} into {s.outs}. Check that --tissue-type {s.tissue!r} "
+                f"is a tissue kurtorank supports.")
+        done.append(wanted)
     return {"n_samples": len(samples), "assignments": done}
 
 
 def segment(cfg, samples, out: Path) -> dict[str, Any]:
     """Segment nuclei on each H&E (Cellpose/StarDist) → instance masks .npy."""
     import numpy as np
-    import torch
 
     from ..segment import get_segmenter
 
+    try:  # only needed to release the cellpose allocator between slides
+        import torch
+    except ImportError:
+        torch = None
+
+    gpu_mode = str(cfg.gpus).lower() not in {"0", "false", "cpu", "no"}
     seg = get_segmenter(cfg.segmenter, cellpose_model=cfg.cellpose_model,
                         diameter=cfg.diameter, batch_size=cfg.cellpose_batch_size,
-                        flow_threshold=cfg.cellpose_flow_threshold)
+                        flow_threshold=cfg.cellpose_flow_threshold,
+                        gpu=gpu_mode)
     mask_dir = out / "masks" / cfg.tissue
     mask_dir.mkdir(parents=True, exist_ok=True)
     counts = {}
@@ -85,7 +226,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     for s in tqdm(samples, desc="segment", unit="slide", ascii=" =", dynamic_ncols=True):
         dst = mask_dir / f"{s.sample_id}.npy"
         if dst.exists():
-            counts[s.sample_id] = int(np.load(dst).max())
+            counts[s.sample_id] = int(np.load(dst, mmap_mode="r").max())
             continue
         he = read_he_rgb(s.he)
         mask = seg.segment(he, mpp=cfg.mpp)
@@ -93,7 +234,7 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
         counts[s.sample_id] = int(mask.max())
         del he, mask  # free large arrays before next slide
         # Cellpose leaves tens of GB reserved; without this the next slide OOMs.
-        if torch.cuda.is_available():
+        if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()
     return {"segmenter": seg.name, "nuclei_per_sample": counts}
 
@@ -136,6 +277,8 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         nuc = nb.groupby("cell_id")[[xs[0], ys[0]]].mean()
         nuc.columns = ["nx", "ny"]
         out = cells.join(nuc, on="cell_id")
+        # Centroids may arrive as ints; pandas>=2 refuses the float assignment below.
+        out = out.astype({"x_centroid": "float64", "y_centroid": "float64"})
         keep = out["nx"].notna()
         out.loc[keep, "x_centroid"] = out.loc[keep, "nx"]
         out.loc[keep, "y_centroid"] = out.loc[keep, "ny"]
@@ -176,10 +319,15 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         from ..bunwarp import map_cells
         params = Path(s.outs) / "registration_params.json"
         elastic = Path(s.outs) / "direct_transf.txt"
-        if cfg.transform == "none" or not params.exists():
+        if cfg.transform == "none":
             xpx = (df["x_um"] / cfg.mpp).to_numpy()
             ypx = (df["y_um"] / cfg.mpp).to_numpy()
         else:
+            if not params.exists():
+                raise RuntimeError(
+                    f"{s.sample_id}: --transform {cfg.transform} needs {params}, "
+                    f"which is missing. Register with ST2WSI first, or pass "
+                    f"--transform none to scale by mpp alone.")
             # target_wh = full-res H&E (target) dims; the nucleus mask is at that
             # resolution, so its shape supplies the bUnwarpJ lattice extent.
             xy = map_cells(df[["x_um", "y_um"]].to_numpy(), params,
@@ -229,18 +377,18 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         "\n".join(f'{i}: "{n}"' for i, n in label_map.items()) + "\n")
 
     counts, rates, dropped = {}, {}, []
+    conflicts, used = {}, set()
     for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
         df = frames.pop(s.sample_id)  # release each frame as we go
-        mask = np.load(mask_dir / f"{s.sample_id}.npy")
+        # Only scattered points are read, so the mask never needs to be resident.
+        mask = np.load(mask_dir / f"{s.sample_id}.npy", mmap_mode="r")
         xpx, ypx = _to_px(s, df, mask)
         nid = _lookup(mask, xpx, ypx, cfg.match_radius_px)
         df = df.assign(x_px=xpx, y_px=ypx, nucleus_id=nid,
                        class_int=df["label"].map(name_to_int))
-        df = df[df.nucleus_id > 0]
-        # Several Xenium cells can land on one nucleus with conflicting labels;
-        # an arbitrary winner would teach the model contradictions.
-        df = df.drop_duplicates("nucleus_id", keep=False)
-        rate = len(df) / max(len(nid), 1)
+        # Registration quality is how many cells landed on a nucleus at all; the
+        # dedup below is nucleus density, and must not be charged against it.
+        rate = int((nid > 0).sum()) / max(len(nid), 1)
         rates[s.sample_id] = round(rate, 4)
         if rate < cfg.min_match_rate:
             # Below this the surviving matches are mostly chance collisions with
@@ -250,15 +398,37 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
                   f"< min_match_rate {cfg.min_match_rate:.0%}")
             del mask, df
             continue
+        df = df[df.nucleus_id > 0]
+        # Several Xenium cells can land on one nucleus. Only genuinely conflicting
+        # labels are unusable; agreeing ones collapse to a single row.
+        agree = df.groupby("nucleus_id")["class_int"].transform("nunique").eq(1)
+        conflicts[s.sample_id] = int((~agree).sum())
+        df = df[agree].drop_duplicates("nucleus_id", keep="first")
         df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)
         counts[s.sample_id] = len(df)
+        used.update(int(v) for v in df["class_int"].unique())
         del mask, df  # free mask + joined frame before next slide
     if not counts:
         raise RuntimeError("every slide fell below min_match_rate; registration is broken")
+    # Classes carried only by dropped slides would otherwise sit in label_map with
+    # zero tiles and collect the full inverse-frequency cap.
+    if used and len(used) < len(label_map):
+        remap = {old: new for new, old in enumerate(sorted(used))}
+        ghosts = [label_map[k] for k in sorted(set(label_map) - used)]
+        label_map = {new: label_map[old] for old, new in remap.items()}
+        paths.label_map_path(out, cfg.tissue).write_text(
+            "\n".join(f'{i}: "{n}"' for i, n in sorted(label_map.items())) + "\n")
+        for sid in counts:
+            p = nuc_dir / f"{sid}.csv"
+            t = pd.read_csv(p)
+            t["class_int"] = t["class_int"].map(remap)
+            t.to_csv(p, index=False)
+        print(f"[transfer] dropped {len(ghosts)} class(es) with no surviving cells: {ghosts}")
     print(f"[transfer] kept {len(counts)}/{len(samples)} slides, "
           f"median match rate {float(np.median(list(rates.values()))):.1%}")
     return {"n_classes": len(label_map), "cells_per_sample": counts,
-            "match_rate": rates, "dropped_slides": dropped}
+            "match_rate": rates, "dropped_slides": dropped,
+            "conflicting_cells": conflicts}
 
 
 
@@ -280,31 +450,32 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     lab_dir = paths.labels_dir(out, cfg.tissue)
     img_dir.mkdir(parents=True, exist_ok=True)
     lab_dir.mkdir(parents=True, exist_ok=True)
-    stride = int(cfg.tile_px * (1 - cfg.overlap))
+    stride = max(int(cfg.tile_px * (1 - cfg.overlap)), 1)
     written = 0
     from tqdm import tqdm
     for s in tqdm(samples, desc="tile", unit="slide", ascii=" =", dynamic_ncols=True):
         csv = nuc_dir / f"{s.sample_id}.csv"
         if not csv.exists():        # dropped by the transfer QC
             continue
-        he = read_he_rgb(s.he)
         cells = pd.read_csv(csv)
-        h, w = he.shape[:2]
-        for ti, y0 in enumerate(range(0, h - cfg.tile_px + 1, stride)):
-            for tj, x0 in enumerate(range(0, w - cfg.tile_px + 1, stride)):
-                patch = he[y0:y0 + cfg.tile_px, x0:x0 + cfg.tile_px]
-                if float(patch.mean()) > cfg.bg_thresh:
-                    continue
-                sub = cells[(cells.x_px >= x0) & (cells.x_px < x0 + cfg.tile_px) &
-                            (cells.y_px >= y0) & (cells.y_px < y0 + cfg.tile_px)]
-                if len(sub) < cfg.min_cells:
-                    continue
-                stem = f"{s.sample_id}_tile_{ti * 10000 + tj:05d}"
-                Image.fromarray(patch).save(img_dir / f"{stem}.png")
-                sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
-                    lab_dir / f"{stem}.csv", header=False, index=False)
-                written += 1
-        del he  # free WSI array after all tiles for this slide
+        with SlideReader(s.he) as reader:
+            h, w = reader.height, reader.width
+            for ti, y0 in enumerate(range(0, h - cfg.tile_px + 1, stride)):
+                for tj, x0 in enumerate(range(0, w - cfg.tile_px + 1, stride)):
+                    # Cheap cell filter first: most tiles fail it, and decoding
+                    # their pixels only to discard them dominates the stage.
+                    sub = cells[(cells.x_px >= x0) & (cells.x_px < x0 + cfg.tile_px) &
+                                (cells.y_px >= y0) & (cells.y_px < y0 + cfg.tile_px)]
+                    if len(sub) < cfg.min_cells:
+                        continue
+                    patch = reader.window(y0, x0, cfg.tile_px, cfg.tile_px)
+                    if float(patch.mean()) > cfg.bg_thresh:
+                        continue
+                    stem = f"{s.sample_id}_tile_{ti * 10000 + tj:05d}"
+                    Image.fromarray(patch).save(img_dir / f"{stem}.png")
+                    sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
+                        lab_dir / f"{stem}.csv", header=False, index=False)
+                    written += 1
     return {"tiles": written}
 
 
@@ -357,19 +528,11 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
     build a confusion-matrix figure from the raw tensors.
     """
     import json
-    import os
     import shutil
 
     import numpy as np
 
-    cellvit = os.environ.get("CELLVIT_ROOT")
-    logs = Path(cellvit) / "logs_local" if cellvit else None
-    if not logs or not logs.is_dir():
-        raise RuntimeError("no logs_local under $CELLVIT_ROOT; run train first")
-    runs = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
-    if not runs:
-        raise RuntimeError("no trained run; train first")
-    run_dir = runs[-1].parent.parent
+    run_dir = _find_run_dir(cfg, out)
     val_results_dir = run_dir / "val_results"
 
     rd = paths.report_dir(out, cfg.tissue)
@@ -429,13 +592,7 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
     cellvit = os.environ.get("CELLVIT_ROOT")
     if not cellvit or not Path(cellvit).is_dir():
         raise RuntimeError("set $CELLVIT_ROOT to the CellViT-plus-plus checkout")
-    logs = Path(cellvit) / "logs_local"
-    if not logs.is_dir():
-        raise RuntimeError("no logs_local under $CELLVIT_ROOT; run train first")
-    cands = sorted(logs.rglob("checkpoints/model_best.pth"), key=lambda p: p.stat().st_mtime)
-    if not cands:
-        raise RuntimeError("no model_best.pth found; training incomplete")
-    best = cands[-1]
+    best = _find_run_dir(cfg, out) / "checkpoints" / "model_best.pth"
     dst = paths.models_dir(out, cfg.tissue) / "main"
     dst.mkdir(parents=True, exist_ok=True)
 

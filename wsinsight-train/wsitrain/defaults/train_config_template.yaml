@@ -7,7 +7,7 @@ logging:
   log_dir: ${CELLVIT_LOGS}
   level: Debug
 random_seed: ${SEED}
-gpu: 0
+gpu: ${GPU_ID}
 data:
   dataset: DetectionDataset
   dataset_path: ${TISSUE_ROOT}

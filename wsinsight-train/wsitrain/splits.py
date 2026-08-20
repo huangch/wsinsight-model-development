@@ -181,5 +181,5 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
 def write_split(res: SplitResult, out_dir: Path) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "train.csv").write_text("\n".join(res.train) + "\n")
-    (out_dir / "val.csv").write_text("\n".join(res.val) + "\n")
+    for name, rows in (("train.csv", res.train), ("val.csv", res.val)):
+        (out_dir / name).write_text("".join(f"{r}\n" for r in rows))

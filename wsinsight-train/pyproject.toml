@@ -12,6 +12,7 @@ license = { text = "BSD-3-Clause" }
 dependencies = [
   "numpy",
   "pandas",
+  "pyarrow",
   "pyyaml",
   "scipy",
   "tifffile",
@@ -23,10 +24,16 @@ dependencies = [
 
 [project.optional-dependencies]
 stardist = ["stardist", "tensorflow"]
+# zarr lets the tile stage read windows instead of whole slides.
+lowmem = ["zarr"]
 dev = ["pytest"]
 
 [project.scripts]
 wsitrain = "wsitrain.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
 
 [tool.setuptools]
 packages = ["wsitrain", "wsitrain.stages"]

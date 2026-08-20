@@ -24,7 +24,7 @@ class RunConfig:
     output: Path
 
     # segmentation
-    segmenter: str = "cellpose"          # cellpose | stardist
+    segmenter: str = "stardist"         # cellpose | stardist
     cellpose_model: str = "cpsam"
     diameter: float | None = None
     cellpose_batch_size: int = 8         # tile batch; lower if GPU OOMs

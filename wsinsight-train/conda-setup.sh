@@ -61,8 +61,12 @@ export PIP_CACHE_DIR=/tmp/pip-cache-wsitrain
 pip install torch torchvision nvidia-ml-py
 pip install cellpose
 
-# Optional StarDist backend (for legacy parity).
-pip install "stardist" tensorflow || echo "WARNING: stardist optional install skipped"
+# StarDist is the default segmentation backend.
+pip install "stardist" tensorflow || echo "WARNING: stardist install failed; use --segmenter cellpose"
+
+# Runtime + test deps not covered by the heavy stack above.
+# zarr is what keeps the tile stage from loading whole slides into RAM.
+pip install pyarrow pytest zarr
 
 # kurtorank (editable, not on PyPI).
 if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
@@ -77,5 +81,6 @@ pip install --no-deps -e "${SCRIPT_DIR}"
 # Smoke test.
 echo "---- smoke test ----"
 wsitrain --version
+python -m pytest "${SCRIPT_DIR}/tests" -q || echo "WARNING: test suite did not pass"
 python -c "import torch; print('cuda', torch.cuda.is_available(), torch.cuda.device_count())"
 echo "Done. Set CELLVIT_ROOT, then: wsitrain check --input <dir> --tissue pantissue"

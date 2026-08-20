@@ -1,9 +1,5 @@
 """Pipeline stages. Each stage is ``run(cfg, samples, out) -> dict`` and is
 idempotent: the DAG skips it when the manifest marks it done.
-
-Heavy stages (segment/transfer/tile/train/export) are scaffolded with their
-contracts and raise NotImplementedError until the porting from pipeline.old's
-Groovy + train_tissue.sh is complete. annotate, split and report are wired.
 """
 from __future__ import annotations
 
@@ -214,7 +210,9 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
     except ImportError:
         torch = None
 
-    gpu_mode = str(cfg.gpus).lower() not in {"0", "false", "cpu", "no"}
+    # "0" selects device 0, matching configrender._gpu_id; only explicit
+    # cpu-ish values turn the GPU off.
+    gpu_mode = str(cfg.gpus).strip().lower() not in {"cpu", "none", "false", "no", ""}
     seg = get_segmenter(cfg.segmenter, cellpose_model=cfg.cellpose_model,
                         diameter=cfg.diameter, batch_size=cfg.cellpose_batch_size,
                         flow_threshold=cfg.cellpose_flow_threshold,
@@ -484,6 +482,12 @@ def split(cfg, samples, out: Path) -> dict[str, Any]:
     label_dir = paths.labels_dir(out, cfg.tissue)
     res = splits_mod.split_tiles(label_dir, val_frac=cfg.val_frac,
                                  by_slide=cfg.by_slide, seed=cfg.seed)
+    if not res.train or not res.val:
+        # CellViT picks its best checkpoint on the validation set, so an empty
+        # side trains a model that can never be scored or early-stopped.
+        raise RuntimeError(
+            f"split produced {len(res.train)} train / {len(res.val)} val tiles; "
+            f"both sides must be non-empty. Adjust val_frac or tile more slides.")
     splits_mod.write_split(res, paths.splits_dir(out, cfg.tissue, cfg.fold))
     wr = weights_mod.compute_weights(paths.label_map_path(out, cfg.tissue),
                                      label_dir, cap=cfg.weight_cap)

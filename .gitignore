@@ -51,6 +51,14 @@ cellvit-training/**/*.ckpt
 # ── Vendored upstream + base weights (re-cloneable; instructions in cellvit/README.md) ──
 cellvit-training/cellvit/models/
 
+# ── StarDist pretrained weights (downloaded on demand into ~/.keras) ───────
+# csbdeep writes these next to the CWD when no basedir is given, which drops a
+# ~5.8 MB weights_best.h5 into the repo root. wsitrain resolves the model from
+# ~/.keras/models/StarDist2D (or --stardist-model-dir), so the copies here are
+# a cache, not a source.
+StarDist2D/
+stardist_models/
+
 # ── QuPath projects (large, machine-local; per-image .qpdata is huge) ───────
 cellvit-training/qprj/
 kurtorank/qprj/

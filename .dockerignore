@@ -1,0 +1,25 @@
+# wsinsight-model-development — Docker build context filter
+#
+# The wsitrain image is built from THIS directory (its Dockerfile does
+#   COPY ./wsinsight-train /app/wsinsight-train
+#   COPY ./kurtorank       /app/kurtorank
+# ), so the context root is here, not wsinsight-train/. Unfiltered that is
+# ~3.9 TB (data/ 3.2T, models/ 736G, cellvit-training/ 34G, .git 14G), which
+# the daemon would try to read before the first layer runs.
+#
+# Allowlist rather than blocklist: anything new added beside these two source
+# trees is excluded automatically instead of silently entering the context.
+*
+!wsinsight-train
+!kurtorank
+
+# Re-exclude the parts of those two that the runtime does not need.
+kurtorank/notebooks
+kurtorank/logs
+kurtorank/docs
+wsinsight-train/docs
+**/__pycache__
+**/.pytest_cache
+**/*.egg-info
+**/.ipynb_checkpoints
+**/*.py[cod]

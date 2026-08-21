@@ -14,8 +14,10 @@ import sys
 from pathlib import Path
 
 from . import __version__, STAGES
-from .config import build_config, load_resolved
+from .config import (CHOICES, RunConfig, load_config_file, load_resolved,
+                     resolve_config)
 from .dataset import discover_samples, validate_input
+from .paths import resolved_config_path
 
 
 def _cmd_check(args) -> int:
@@ -82,9 +84,15 @@ def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--output", default=None)
     p.add_argument("--force", action="store_true",
                    help="re-run stages the manifest already marks done")
+    p.add_argument("--config", type=Path, default=None, metavar="FILE",
+                   help="YAML of settings, applied over the saved config and "
+                        "under these flags; settings other commands own are "
+                        "carried forward, not discarded")
     p.add_argument("--reset-config", action="store_true",
                    help="ignore the config an earlier command saved in --output "
                         "and start from the shipped defaults plus these flags")
+    p.add_argument("--show-config", action="store_true",
+                   help="list every setting and where its value came from")
 
 
 def _add_labelspace(p: argparse.ArgumentParser) -> None:
@@ -118,7 +126,7 @@ def _add_gpus(p: argparse.ArgumentParser) -> None:
 
 
 def _add_segment(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--segmenter", default=None, choices=["cellpose", "stardist"])
+    p.add_argument("--segmenter", default=None, choices=list(CHOICES["segmenter"]))
     p.add_argument("--cellpose-model", default=None, help="cellpose model name")
     p.add_argument("--stardist-model", default=None, help="stardist model name")
     p.add_argument("--stardist-model-dir", type=Path, default=None,
@@ -144,7 +152,7 @@ def _add_transform(p: argparse.ArgumentParser) -> None:
     # Not transfer-only: dag drops unaligned samples from every stage, so
     # segment has to be told the same thing or it segments a different cohort.
     p.add_argument("--transform", default=None,
-                   choices=["affine", "affine+bspline", "none"])
+                   choices=list(CHOICES["transform"]))
 
 
 def _add_transfer(p: argparse.ArgumentParser) -> None:
@@ -198,6 +206,21 @@ _STAGE_FLAGS = {
     "report": (),
 }
 
+# `run` offers every stage's flags; kept here rather than inline in main() so
+# _fields_for can read it back.
+_RUN_FLAGS = (_add_labelspace, _add_annotate, _add_segment, _add_mpp, _add_transform,
+              _add_transfer, _add_tile, _add_tile_px, _add_split, _add_train,
+              _add_model_id, _add_gpus)
+
+
+def _fields_for(command: str) -> set[str]:
+    """Settings the command exposes, read off its own parser so a new flag
+    cannot forget to register itself in a second list."""
+    p = argparse.ArgumentParser(add_help=False)
+    for add in (_RUN_FLAGS if command == "run" else _STAGE_FLAGS.get(command, ())):
+        add(p)
+    return {a.dest for a in p._actions} & set(RunConfig.__dataclass_fields__)
+
 _STAGE_HELP = {
     "annotate": "Label cells with kurtorank.",
     "segment": "Segment nuclei on each H&E.",
@@ -220,8 +243,39 @@ _OVERRIDE_FIELDS = (
 )
 
 
+def _origin(field: str, label: str, cfg, config_path) -> str:
+    if label == "flag":
+        return ("--by-tile/--by-slide" if field == "by_slide"
+                else "--" + field.replace("_", "-"))
+    if label == "config":
+        return f"--config {Path(config_path).name}"
+    if label == "saved":
+        return resolved_config_path(cfg.output, cfg.tissue).name
+    return "default"
+
+
+def _print_config(command, cfg, source, config_path, show_all) -> None:
+    mine = _fields_for(command)
+    values = cfg.to_dict()
+    shown = sorted(f for f in mine if show_all or source.get(f) != "default")
+    # Settings this command does not read still travel with the run, so say so
+    # rather than leaving them looking ignored.
+    carried = sorted(f for f in source if f not in mine and source[f] != "default")
+
+    print(f"[config] {command}  tissue={cfg.tissue}")
+    width = max((len(f) for f in shown), default=0)
+    for f in shown:
+        print(f"  {f:<{width}} = {values[f]!s:<22} "
+              f"({_origin(f, source[f], cfg, config_path)})")
+    n_default = sum(1 for f in mine if source.get(f) == "default")
+    if n_default and not show_all:
+        print(f"  ({n_default} more at their shipped defaults)")
+    if carried:
+        print(f"  carried for later stages: {' '.join(carried)}")
+
+
 def _cmd_run(args) -> int:
-    # Absent on a stage command that does not expose the flag; build_config
+    # Absent on a stage command that does not expose the flag; the resolver
     # then falls back to the saved config, and only then to the shipped default.
     overrides = {name: getattr(args, name, None) for name in _OVERRIDE_FIELDS}
     overrides["drop_labels"] = _labels(getattr(args, "drop_labels", None))
@@ -229,8 +283,12 @@ def _cmd_run(args) -> int:
     output = Path(args.output) if args.output else None
     base = ({} if getattr(args, "reset_config", False)
             else load_resolved(Path(args.input), args.tissue, output))
-    cfg = build_config(Path(args.input), args.tissue, output, overrides=overrides,
-                       base=base)
+    config_path = getattr(args, "config", None)
+    config = load_config_file(config_path) if config_path else None
+    cfg, source = resolve_config(Path(args.input), args.tissue, output,
+                                 overrides=overrides, base=base, config=config)
+    _print_config(getattr(args, "only", None) or "run", cfg, source, config_path,
+                  getattr(args, "show_config", False))
     from . import dag
     return dag.run(cfg, only=getattr(args, "only", None),
                    skip=_stages(getattr(args, "run_skip", None)), force=args.force)
@@ -249,9 +307,7 @@ def main(argv=None) -> int:
 
     r = sub.add_parser("run", help="Run the end-to-end training pipeline.")
     _add_common(r)
-    for add in (_add_labelspace, _add_annotate, _add_segment, _add_mpp, _add_transform,
-                _add_transfer, _add_tile, _add_tile_px, _add_split, _add_train,
-                _add_model_id, _add_gpus):
+    for add in _RUN_FLAGS:
         add(r)
     r.add_argument("--run-skip", action="extend", nargs="+", default=[],
                    metavar="STAGE", help="run everything EXCEPT these stages")

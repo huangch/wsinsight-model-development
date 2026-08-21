@@ -61,10 +61,38 @@ stages it depends on are marked done in the manifest and their output is still
 there, so `wsitrain tile` on a fresh `--output` tells you to run `transfer`
 first rather than producing an empty tile set. Each stage command offers only
 the flags its own stage reads; anything else it needs is carried over from the
-config the previous command wrote into `--output`. Pass `--reset-config` to
-ignore that carried-over config and start from the shipped defaults. Completed
-stages are skipped on re-run (`--force` overrides, and also discards the masks
-segment would otherwise reuse).
+config the previous command wrote into `--output`. Completed stages are skipped
+on re-run (`--force` overrides, and also discards the masks segment would
+otherwise reuse).
+
+### Where a setting's value comes from
+
+Four layers, lowest priority first:
+
+```
+defaults/run.yaml  <  <output>/run-<tissue>.yaml  <  --config FILE  <  CLI flags
+```
+
+Every command prints which layer each of its settings came from; `--show-config`
+lists the ones sitting at their defaults too. Settings a command does not read
+(`--val-frac` during `segment`, say) are still carried forward for the stages
+that do, and reported as such.
+
+`--config` **patches** the saved record rather than replacing it. The saved file
+is a full dump, so replacing it would revert every earlier non-default choice
+and invalidate the stages that produced them. The two flags are independent:
+
+| | base layers | use for |
+|---|---|---|
+| `--config F` | defaults + saved + F | change a few settings on an existing run |
+| `--reset-config` | defaults | start clean; what the scripts do |
+| `--config F --reset-config` | defaults + F | reproduce a run exactly from its `run-<tissue>.yaml` |
+
+A `--config` file is hand-written, so it is checked strictly: an unrecognised
+setting is an error with a suggestion, and values are validated against the same
+choices the flags accept. `input`, `tissue` and `output` in the file are ignored
+— they always come from the command line, so a saved record can be fed back
+verbatim.
 
 Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|sthelar_cancer_normal|
 hne|pantissue|pannuke|lcp`, default `sthelar_full`), `--segmenter cellpose|stardist`,

@@ -33,7 +33,14 @@ drops stages with `--run-skip a b`.
 
 A stage command only offers the flags its own stage reads; everything else is
 inherited from `<output>/run-<tissue>.yaml`, written by the previous command.
-Use `--reset-config` to ignore that and fall back to the shipped defaults.
+Settings resolve through four layers, lowest first: shipped defaults, that saved
+record, a `--config FILE`, then the flags you type. Each command prints where
+every setting came from (`--show-config` includes the defaults).
+
+`--config` patches the saved record rather than replacing it, so it is safe for
+changing a couple of settings mid-pipeline. Add `--reset-config` to drop the
+saved layer — alone it means "start from the shipped defaults", and together
+with `--config` it reproduces a run exactly from a saved `run-<tissue>.yaml`.
 
 ## Data contract
 

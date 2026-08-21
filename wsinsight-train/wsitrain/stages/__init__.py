@@ -677,16 +677,17 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
         cm    = confusion_matrix(gts, preds, labels=list(range(len(class_names))))
         cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-9)
 
-        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-        for ax, mat, title, fmt in zip(axes, [cm, cm_norm],
-                                       ["Counts", "Normalised"], ["d", ".2f"],
-                                       strict=True):
-            disp = ConfusionMatrixDisplay(confusion_matrix=mat, display_labels=class_names)
-            disp.plot(ax=ax, colorbar=False, xticks_rotation="vertical",
-                      cmap=CONFUSION_CMAP, values_format=fmt)
-            ax.set_title(title)
+        fig, ax = plt.subplots(figsize=(8, 7))
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm_norm, display_labels=class_names)
+        disp.plot(ax=ax, colorbar=True, xticks_rotation=45,
+                  cmap=CONFUSION_CMAP, values_format=".2f",
+                  text_kw={"fontsize": 8})
+        # sklearn only sets the rotation, which leaves 45-degree labels centred
+        # under the tick rather than ending at it.
+        plt.setp(ax.get_xticklabels(), ha="right", rotation_mode="anchor")
+        ax.set_title("Normalised")
         fig.tight_layout()
-        fig.savefig(rd / "confusion_matrix.png", dpi=150)
+        fig.savefig(rd / "confusion_matrix.png", dpi=600)
         plt.close(fig)
 
     if not metrics and not (pred_pt.exists() and gt_pt.exists()):

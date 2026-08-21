@@ -6,6 +6,7 @@ run is reproducible from its command line alone.
 """
 from __future__ import annotations
 
+import difflib
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,15 @@ from typing import Any
 import yaml
 
 DEFAULTS_PATH = Path(__file__).resolve().parent / "defaults" / "run.yaml"
+
+# Always supplied on the command line, never taken from a file.
+_IO_FIELDS = ("input", "tissue", "output")
+
+# Shared with argparse so the flag path and the YAML path agree on what is legal.
+CHOICES: dict[str, tuple[str, ...]] = {
+    "segmenter": ("cellpose", "stardist"),
+    "transform": ("affine", "affine+bspline", "none"),
+}
 
 
 @dataclass
@@ -112,25 +122,86 @@ def load_resolved(input_dir: Path, tissue: str, output: Path | None) -> dict[str
     return yaml.safe_load(path.read_text()) or {}
 
 
-def build_config(input_dir: Path, tissue: str, output: Path | None,
-                 overrides: dict[str, Any] | None = None,
-                 base: dict[str, Any] | None = None) -> RunConfig:
-    """Merge shipped defaults < earlier resolved config < explicit CLI overrides.
+def load_config_file(path: Path) -> dict[str, Any]:
+    """Read a --config file. Unlike the saved record, this one is hand-written,
+    so a typo is an error rather than something to tolerate."""
+    path = Path(path).expanduser()
+    if not path.is_file():
+        raise SystemExit(f"--config file not found: {path}")
+    try:
+        loaded = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as exc:
+        raise SystemExit(f"--config {path} is not valid YAML: {exc}") from exc
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"--config {path} must be a mapping of setting: value")
+    _reject_unknown_keys(loaded, path)
+    _reject_bad_values(loaded, path)
+    return loaded
 
-    ``base`` carries a previous command's choices forward so that a per-stage
-    command need not repeat every shared flag; without it an omitted flag would
-    silently fall back to the shipped default and invalidate earlier stages.
+
+def _reject_unknown_keys(values: dict[str, Any], path: Path) -> None:
+    known = set(RunConfig.__dataclass_fields__)
+    unknown = [k for k in values if k not in known]
+    if not unknown:
+        return
+    lines = [f"--config {path} has settings wsitrain does not recognise:"]
+    for key in sorted(unknown):
+        near = difflib.get_close_matches(key, sorted(known - set(_IO_FIELDS)), n=1)
+        lines.append(f"  {key}" + (f"    did you mean {near[0]}?" if near else ""))
+    lines.append("run `wsitrain run --help` for the full list of settings.")
+    raise SystemExit("\n".join(lines))
+
+
+def _reject_bad_values(values: dict[str, Any], path: Path) -> None:
+    # The flag path gets this from argparse `choices=`; a YAML path would
+    # otherwise reach the stage that consumes it and fail hours later.
+    for key, allowed in CHOICES.items():
+        if key in values and values[key] not in allowed:
+            raise SystemExit(
+                f"--config {path}: {key}={values[key]!r} is not one of "
+                f"{', '.join(allowed)}")
+
+
+def resolve_config(input_dir: Path, tissue: str, output: Path | None, *,
+                   overrides: dict[str, Any] | None = None,
+                   base: dict[str, Any] | None = None,
+                   config: dict[str, Any] | None = None,
+                   ) -> tuple[RunConfig, dict[str, str]]:
+    """Merge the config layers, and report where each field's value came from.
+
+    Lowest priority first: shipped defaults < saved run-<tissue>.yaml <
+    --config file < CLI flags. ``config`` patches the saved layer rather than
+    replacing it: the saved record is a full dump, so replacing it would revert
+    every earlier non-default choice and invalidate the stages that produced
+    them.
     """
     merged = load_defaults()
-    if base:
-        merged.update({k: v for k, v in base.items() if v is not None})
-    if overrides:
-        merged.update({k: v for k, v in overrides.items() if v is not None})
+    source = dict.fromkeys(merged, "default")
+    known = RunConfig.__dataclass_fields__.keys()
 
-    for key in ("input", "tissue", "output"):
-        merged.pop(key, None)
-    out = default_output(input_dir, output)
-    valid = RunConfig.__dataclass_fields__.keys()
-    merged = {k: v for k, v in merged.items() if k in valid}
-    return RunConfig(input=Path(input_dir).expanduser().resolve(), tissue=tissue,
-                     output=Path(out), **merged)
+    for values, label in ((base, "saved"), (config, "config"), (overrides, "flag")):
+        for key, value in (values or {}).items():
+            # input/tissue/output always come from the command line, so a saved
+            # record or a config file may carry them but never set them.
+            if value is None or key in _IO_FIELDS:
+                continue
+            if key not in known:
+                continue      # only --config is strict; see load_config_file
+            merged[key] = value
+            source[key] = label
+
+    merged = {k: v for k, v in merged.items() if k in known}
+    return (RunConfig(input=Path(input_dir).expanduser().resolve(), tissue=tissue,
+                      output=default_output(input_dir, output), **merged),
+            {k: source[k] for k in merged})
+
+
+def build_config(input_dir: Path, tissue: str, output: Path | None,
+                 overrides: dict[str, Any] | None = None,
+                 base: dict[str, Any] | None = None,
+                 config: dict[str, Any] | None = None) -> RunConfig:
+    """``resolve_config`` without the provenance, for callers that don't need it."""
+    return resolve_config(input_dir, tissue, output, overrides=overrides,
+                          base=base, config=config)[0]

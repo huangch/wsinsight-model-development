@@ -13,3 +13,5 @@ repos:
     rev: 0.9.1
     hooks:
       - id: nbstripout
+        # This one is published for its rendered figures, so its outputs stay.
+        exclude: '^kurtorank/notebooks/v1/kurtorank3\.ipynb$'

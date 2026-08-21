@@ -6,7 +6,8 @@ from .config import RunConfig
 from .dataset import discover_samples
 from .manifest import Manifest
 from .paths import resolved_config_path, manifest_path
-from .stages import STAGE_FUNCS
+from .stages import STAGE_FUNCS, reset_cache
+from . import prereq
 
 import yaml
 
@@ -20,11 +21,17 @@ _REQUIRED_OUTPUT = {
 }
 
 
-def run(cfg: RunConfig, *, skip: list[str] | None = None, force: bool = False) -> int:
+def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = None,
+        force: bool = False) -> int:
+    """Run the pipeline.
+
+    ``only`` names a single stage (a stage command). Because the stages it
+    depends on are not part of this invocation, they are checked against the
+    manifest first. A full or ``skip``-ed run needs no such check: it executes
+    the stages in order and aborts as soon as one fails.
+    """
     skipped = set(skip or [])
     cfg.output.mkdir(parents=True, exist_ok=True)
-    resolved_config_path(cfg.output, cfg.tissue).write_text(yaml.safe_dump(cfg.to_dict()))
-    mf = Manifest.load_or_new(manifest_path(cfg.output, cfg.tissue), cfg.to_dict())
     samples = discover_samples(cfg.input, cfg.tissue)
     if cfg.transform != "none":
         kept = [s for s in samples if s.aligned]
@@ -33,7 +40,7 @@ def run(cfg: RunConfig, *, skip: list[str] | None = None, force: bool = False) -
             print(f"[run] skipping {dropped} unaligned sample(s) (transform={cfg.transform}); "
                   f"register them or use --transform none")
         samples = kept
-    todo = [s for s in STAGES if s not in skipped]
+    todo = [only] if only else [s for s in STAGES if s not in skipped]
     print(f"[run] tissue={cfg.tissue} samples={len(samples)} steps={todo}")
 
     if not samples and {"annotate", "segment", "transfer", "tile"}.intersection(todo):
@@ -41,10 +48,20 @@ def run(cfg: RunConfig, *, skip: list[str] | None = None, force: bool = False) -
             f"[run] no samples found for tissue={cfg.tissue} under {cfg.input} — "
             "check --input and that samples live in <input>/<tissue>/<sample>/outs/")
 
+    # Only once the invocation is known to be viable. Both of these have lasting
+    # effects -- the config is the base every later command inherits, and loading
+    # the manifest can invalidate stages -- so a doomed run must not reach them.
+    resolved_config_path(cfg.output, cfg.tissue).write_text(yaml.safe_dump(cfg.to_dict()))
+    mf = Manifest.load_or_new(manifest_path(cfg.output, cfg.tissue), cfg.to_dict())
+
     for stage in todo:
         if not force and mf.is_done(stage):
             print(f"[{stage}] up-to-date — skipping")
             continue
+        if only:
+            prereq.check(stage, mf, cfg)
+        if force:
+            reset_cache(stage, cfg, cfg.output)
         print(f"[{stage}] running…")
         try:
             info = STAGE_FUNCS[stage](cfg, samples, cfg.output)

@@ -25,7 +25,9 @@ _INVALIDATES: dict[str, str] = {
     "cellpose_flow_threshold": "segment",
     # mpp sets the segmentation rescale factor, not just the tile geometry.
     "mpp": "segment",
-    "transform": "transfer",
+    # transform decides which samples the whole run sees (dag drops unaligned
+    # ones), so relaxing it has to bring segmentation back for the new slides.
+    "transform": "segment",
     "match_radius_px": "transfer",
     "min_match_rate": "transfer",
     "drop_labels": "transfer",
@@ -37,8 +39,10 @@ _INVALIDATES: dict[str, str] = {
     "by_slide": "split",
     "seed": "split",
     "weight_cap": "split",
-    "backbone": "train",
-    "fold": "train",
+    # split writes both splits/<fold>/ and train_configs/<backbone>/<fold>.yaml,
+    # so these belong to split even though only train consumes them.
+    "backbone": "split",
+    "fold": "split",
     "tune": "train",
 }
 

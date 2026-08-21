@@ -7,7 +7,6 @@ import tifffile
 
 from wsitrain import paths, segment as segment_mod, stages
 from wsitrain.configrender import _gpu_id
-from wsitrain.config import build_config
 from wsitrain.dataset import Sample
 from wsitrain.manifest import Manifest
 

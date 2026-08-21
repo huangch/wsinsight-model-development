@@ -6,7 +6,7 @@ run is reproducible from its command line alone.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,12 @@ class RunConfig:
         # comparison and the declared type agree whatever the source.
         if not isinstance(self.drop_labels, tuple):
             self.drop_labels = tuple(self.drop_labels or ())
+        # to_dict() stringifies Paths, so a config reloaded from disk would
+        # otherwise hand stages a str where they expect a Path.
+        for name in ("stardist_model_dir", "markers_csv"):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, Path):
+                setattr(self, name, Path(value))
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -89,16 +95,42 @@ def load_defaults() -> dict[str, Any]:
     return yaml.safe_load(DEFAULTS_PATH.read_text()) or {}
 
 
+def default_output(input_dir: Path, output: Path | None) -> Path:
+    # Resolved, because `input` is stringified into the manifest and compared
+    # verbatim: ./data and /abs/data would otherwise invalidate every stage.
+    base = Path(output) if output else Path(input_dir) / "wsinsight_train_out"
+    return base.expanduser().resolve()
+
+
+def load_resolved(input_dir: Path, tissue: str, output: Path | None) -> dict[str, Any]:
+    """Config left behind by an earlier command in the same --output, if any."""
+    from .paths import resolved_config_path
+
+    path = resolved_config_path(default_output(input_dir, output), tissue)
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text()) or {}
+
+
 def build_config(input_dir: Path, tissue: str, output: Path | None,
-                 overrides: dict[str, Any] | None = None) -> RunConfig:
-    """Merge shipped defaults < explicit CLI overrides."""
+                 overrides: dict[str, Any] | None = None,
+                 base: dict[str, Any] | None = None) -> RunConfig:
+    """Merge shipped defaults < earlier resolved config < explicit CLI overrides.
+
+    ``base`` carries a previous command's choices forward so that a per-stage
+    command need not repeat every shared flag; without it an omitted flag would
+    silently fall back to the shipped default and invalidate earlier stages.
+    """
     merged = load_defaults()
+    if base:
+        merged.update({k: v for k, v in base.items() if v is not None})
     if overrides:
         merged.update({k: v for k, v in overrides.items() if v is not None})
 
     for key in ("input", "tissue", "output"):
         merged.pop(key, None)
-    out = output or (Path(input_dir) / "wsinsight_train_out")
+    out = default_output(input_dir, output)
     valid = RunConfig.__dataclass_fields__.keys()
     merged = {k: v for k, v in merged.items() if k in valid}
-    return RunConfig(input=Path(input_dir), tissue=tissue, output=Path(out), **merged)
+    return RunConfig(input=Path(input_dir).expanduser().resolve(), tissue=tissue,
+                     output=Path(out), **merged)

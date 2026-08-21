@@ -25,6 +25,16 @@ wsitrain run --input /path/to/cohort --tissue breast
 wsitrain --version
 ```
 
+Each pipeline stage is also a command: `annotate`, `segment`, `transfer`,
+`tile`, `split`, `train`, `validate`, `export`, `report`. They take the same
+`--input/--tissue/--output` and refuse to start until the stages they depend on
+are done, so you can step through the pipeline one command at a time. `run`
+drops stages with `--run-skip a b`.
+
+A stage command only offers the flags its own stage reads; everything else is
+inherited from `<output>/run-<tissue>.yaml`, written by the previous command.
+Use `--reset-config` to ignore that and fall back to the shipped defaults.
+
 ## Data contract
 
 Per sample:
@@ -38,5 +48,9 @@ Per sample:
 ## Notes
 
 - Registration is consumed, not generated. Produce ST2WSI outputs before training.
-- Use --transform affine+bspline, affine, or none based on alignment state.
-- Optional stardist/tensorflow install may be skipped; cellpose path remains supported.
+- Use --transform affine+bspline, affine, or none based on alignment state; it
+  decides which samples every stage sees, so segment and transfer must agree.
+- --gpus cpu only turns off segmentation on the GPU; CellViT training needs a
+  device index and the split stage rejects it.
+- stardist is the default segmenter; its tensorflow install is optional, and
+  --segmenter cellpose is the fallback when it is skipped.

@@ -26,12 +26,14 @@ def _harden_tqdm_against_resize() -> None:
 
         def _init(self, *args, **kwargs):  # noqa: ANN001
             kwargs.setdefault("dynamic_ncols", True)
+            kwargs.setdefault("ascii", " =")
             _orig_init(self, *args, **kwargs)
 
         _tqdm_std.tqdm.__init__ = _init
         _tqdm_std.tqdm._tqdm_resize_hardened = True
 
     try:
+        import os
         import signal
 
         if not hasattr(signal, "SIGWINCH"):
@@ -42,12 +44,29 @@ def _harden_tqdm_against_resize() -> None:
         _prev_handler = signal.getsignal(signal.SIGWINCH)
 
         def _on_winch(signum, frame):  # noqa: ANN001
-            try:
-                for inst in list(getattr(_tqdm_std.tqdm, "_instances", [])):
-                    inst.clear(nolock=True)
+            # tqdm falls back to COLUMNS/LINES when the ioctl fails (redirected
+            # fp); a stale pair exported by the shell would pin the old width.
+            os.environ.pop("COLUMNS", None)
+            os.environ.pop("LINES", None)
+            for inst in list(getattr(_tqdm_std.tqdm, "_instances", [])):
+                # One bar that cannot be redrawn must not cost the others their
+                # repaint, so each is isolated rather than the loop as a whole.
+                try:
+                    if inst.disable:
+                        continue
+                    pos = abs(inst.pos)
+                    inst.moveto(pos)
+                    # tqdm's own clear() blanks the line by writing as many
+                    # spaces as the *old* width; once the terminal has shrunk
+                    # that padding wraps and walks the bar down a row per
+                    # resize. Erase to end of line, then drop the status
+                    # printer so it stops padding to the pre-resize length.
+                    inst.fp.write("\r\x1b[K")
+                    inst.moveto(-pos)
+                    inst.sp = inst.status_printer(inst.fp)
                     inst.refresh(nolock=True)
-            except Exception:
-                pass
+                except Exception:
+                    continue
             if callable(_prev_handler):
                 _prev_handler(signum, frame)
 

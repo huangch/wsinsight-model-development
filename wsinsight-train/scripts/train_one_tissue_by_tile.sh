@@ -23,8 +23,8 @@
 #   VAL_FRAC   validation fraction (default 0.20)
 #   SEED       split seed (default 42)
 #   TUNE       auto-tune iterations after training (default 0 = off)
-#   STAGE_ONLY run only these stages, e.g. STAGE_ONLY="segment transfer"
-#   STAGE_SKIP run everything except these, e.g. STAGE_SKIP="annotate"
+#   RUN_SKIP   run everything except these, e.g. RUN_SKIP="annotate". To run a
+#              single stage instead, call it directly: `wsitrain segment ...`
 #   GPUS       device index, or 'cpu' (default auto)
 #   ENVBIN     conda env bin holding wsitrain + torch
 set -euo pipefail
@@ -66,8 +66,7 @@ TUNE="${TUNE:-0}"
 GPUS="${GPUS:-auto}"
 
 STAGE_FLAGS=()
-[ -n "${STAGE_ONLY:-}" ] && STAGE_FLAGS=(--stage-only $STAGE_ONLY)
-[ -n "${STAGE_SKIP:-}" ] && STAGE_FLAGS=(--stage-skip $STAGE_SKIP)
+[ -n "${RUN_SKIP:-}" ] && STAGE_FLAGS=(--run-skip $RUN_SKIP)
 
 SD_FLAGS=()
 [ -n "${STARDIST_MODEL_DIR:-}" ] && SD_FLAGS=(--stardist-model-dir "$STARDIST_MODEL_DIR")

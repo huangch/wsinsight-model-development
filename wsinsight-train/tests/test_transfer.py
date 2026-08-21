@@ -1,7 +1,6 @@
 """Transfer stage: label join, registration, nucleus lookup, QC and label_map."""
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import pytest
 

@@ -167,53 +167,36 @@ def _skip_seen(monkeypatch, tmp_path, *extra):
     return seen
 
 
-def test_stage_skip_is_forwarded(captured, tmp_path, monkeypatch):
-    seen = _skip_seen(monkeypatch, tmp_path, "--stage-skip", "train", "validate", "--force")
+def test_run_skip_is_forwarded(captured, tmp_path, monkeypatch):
+    seen = _skip_seen(monkeypatch, tmp_path, "--run-skip", "train", "validate", "--force")
     assert seen["skip"] == ["train", "validate"]
     assert seen["force"] is True
 
 
-def test_stage_skip_accepts_commas(captured, tmp_path, monkeypatch):
-    seen = _skip_seen(monkeypatch, tmp_path, "--stage-skip", "train,validate")
+def test_run_skip_accepts_commas(captured, tmp_path, monkeypatch):
+    seen = _skip_seen(monkeypatch, tmp_path, "--run-skip", "train,validate")
     assert seen["skip"] == ["train", "validate"]
 
 
-def test_stage_skip_can_be_repeated(captured, tmp_path, monkeypatch):
-    seen = _skip_seen(monkeypatch, tmp_path, "--stage-skip", "train", "--stage-skip", "export")
+def test_run_skip_can_be_repeated(captured, tmp_path, monkeypatch):
+    seen = _skip_seen(monkeypatch, tmp_path, "--run-skip", "train", "--run-skip", "export")
     assert seen["skip"] == ["train", "export"]
-
-
-def test_stage_only_runs_just_that_stage(captured, tmp_path, monkeypatch):
-    from wsitrain import STAGES
-
-    seen = _skip_seen(monkeypatch, tmp_path, "--stage-only", "annotate")
-    assert seen["skip"] == [s for s in STAGES if s != "annotate"]
-
-
-def test_stage_only_accepts_several(captured, tmp_path, monkeypatch):
-    seen = _skip_seen(monkeypatch, tmp_path, "--stage-only", "segment,transfer")
-    assert "segment" not in seen["skip"] and "transfer" not in seen["skip"]
-    assert "train" in seen["skip"]
 
 
 def test_nothing_skipped_by_default(captured, tmp_path, monkeypatch):
     assert _skip_seen(monkeypatch, tmp_path)["skip"] == []
 
 
-def test_stage_only_and_skip_are_mutually_exclusive(tmp_path):
-    with pytest.raises(SystemExit):
-        main(["run", "--input", str(tmp_path),
-              "--stage-only", "tile", "--stage-skip", "train"])
-
-
 def test_unknown_stage_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
-        main(["run", "--input", str(tmp_path), "--stage-skip", "bogus"])
+        main(["run", "--input", str(tmp_path), "--run-skip", "bogus"])
 
 
-def test_unknown_stage_in_only_is_rejected(tmp_path):
+def test_stage_only_and_stage_skip_are_gone(tmp_path):
     with pytest.raises(SystemExit):
-        main(["run", "--input", str(tmp_path), "--stage-only", "bogus"])
+        main(["run", "--input", str(tmp_path), "--stage-only", "tile"])
+    with pytest.raises(SystemExit):
+        main(["run", "--input", str(tmp_path), "--stage-skip", "train"])
 
 
 def test_from_and_to_are_gone(tmp_path):

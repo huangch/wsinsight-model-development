@@ -244,7 +244,7 @@ def test_subcommand_is_required():
 
 def test_invalid_stage_name_rejected(tmp_path):
     with pytest.raises(SystemExit):
-        main(["run", "--input", str(tmp_path), "--stage-skip", "bogus"])
+        main(["run", "--input", str(tmp_path), "--run-skip", "bogus"])
 
 
 def test_invalid_segmenter_rejected(tmp_path):
@@ -257,7 +257,9 @@ def test_check_reports_problems_for_empty_input(tmp_path, capsys):
     assert "PROBLEMS" in capsys.readouterr().out
 
 
-def test_check_writes_sample_manifest(tmp_path):
+def test_check_writes_sample_list_under_output_not_input(tmp_path):
     _sample_tree(tmp_path, "breast", "s1", reg=True)
-    main(["check", "--input", str(tmp_path), "--tissue", "breast"])
-    assert (tmp_path / "wsitrain_samples.csv").exists()
+    out = tmp_path / "out"
+    main(["check", "--input", str(tmp_path), "--tissue", "breast", "--output", str(out)])
+    assert (out / "wsitrain_samples.csv").exists()
+    assert not (tmp_path / "wsitrain_samples.csv").exists()

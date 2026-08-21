@@ -1,11 +1,9 @@
 """Input discovery + sample manifest.
 
-Mechanism (fallback order):
-  1. auto-discover: recurse from --input; any dir with outs/cells.parquet is a
-     sample; pair the nearest sibling *_he_*image.ome.tif. Flag 'unaligned'.
-  2. manifest: a samples.csv (sample_id,tissue,outs,he,aligned) that
-     overrides/edits discovery. `check` writes one to eyeball.
-  3. BYO: skip discovery, run with --skip annotate segment transfer.
+Discovery is automatic and is the only source of samples: recurse from --input,
+treat any dir with outs/cells.parquet as a sample, and pair the nearest sibling
+*_he_*image.ome.tif. `check` writes the result to a samples.csv so it can be
+eyeballed; nothing reads that file back, so editing it changes nothing.
 
 Tissue is a pooling bucket, not a cell-type filter:
   --tissue breast    -> only samples under a breast/ path
@@ -30,8 +28,10 @@ class Sample:
 
 
 def _find_he(sample_dir: Path) -> Path | None:
-    cands = (sorted(sample_dir.glob("*_he_*image.ome.tif"))
-             + sorted(sample_dir.glob("*he*.ome.tif")))
+    named = sorted(sample_dir.glob("*_he_*image.ome.tif"))
+    # The loose pattern is a superset, so anything already named stays first.
+    cands = named + [p for p in sorted(sample_dir.glob("*he*.ome.tif"))
+                     if p not in set(named)]
     if not cands:
         return None
     aligned = [p for p in cands if "unaligned" not in p.name]

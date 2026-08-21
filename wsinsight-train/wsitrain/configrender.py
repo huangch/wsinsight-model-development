@@ -43,8 +43,14 @@ def _gpu_id(cfg) -> str:
     raw = str(cfg.gpus).strip().lower()
     if raw in {"", "auto", "auto-gpu", "all"}:
         return "0"
-    if raw in {"cpu", "false", "no"}:
-        return "0"
+    if raw in {"cpu", "none", "false", "no"}:
+        # The template renders this into `gpu:`, a CUDA device index. Returning
+        # "0" here would train on the GPU the same flag just told segment to
+        # avoid, so refuse rather than pick a device the user ruled out.
+        raise SystemExit(
+            f"--gpus {cfg.gpus!r} turns the GPU off, but CellViT training needs "
+            "a CUDA device. Pass --gpus <index> (e.g. --gpus 0), or stop before "
+            "the split stage with `--run-skip split train validate export`.")
     try:
         return str(int(raw.split(",")[0]))
     except ValueError:
@@ -72,7 +78,7 @@ def render_config(cfg, out: Path, *, drop_rate: float = 0.1, lr: float = 0.00007
         # cell-type name cannot break or silently truncate the config.
         LABEL_MAP="\n".join(f"    {i}: {json.dumps(label_map[i])}" for i in sorted(label_map)),
         WEIGHTS="[" + ", ".join(f"{w:g}" for w in wlist) + "]")
-    dst = paths.tissue_root(out, cfg.tissue) / "train_configs" / cfg.backbone / f"{cfg.fold}.yaml"
+    dst = paths.train_config_path(out, cfg.tissue, cfg.backbone, cfg.fold)
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(body)
     return dst

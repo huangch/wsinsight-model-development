@@ -76,12 +76,19 @@ def test_default_drop_labels_survive_a_manifest_reload(tmp_path):
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("raw,expected", [
-    ("auto", "0"), ("", "0"), ("all", "0"), ("cpu", "0"),
+    ("auto", "0"), ("", "0"), ("all", "0"),
     ("0", "0"), ("1", "1"), ("3", "3"), ("2,3", "2"), ("nonsense", "0"),
 ])
 def test_gpu_id_resolution(tmp_path, raw, expected):
     cfg = build_config(tmp_path, "breast", tmp_path / "o", overrides={"gpus": raw})
     assert _gpu_id(cfg) == expected
+
+
+@pytest.mark.parametrize("raw", ["cpu", "none", "false", "no"])
+def test_gpu_off_is_refused_rather_than_silently_device_zero(tmp_path, raw):
+    cfg = build_config(tmp_path, "breast", tmp_path / "o", overrides={"gpus": raw})
+    with pytest.raises(SystemExit):
+        _gpu_id(cfg)
 
 
 def test_backbone_weights_empty_without_root():

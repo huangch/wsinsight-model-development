@@ -77,7 +77,8 @@ def load_elastic(path: Path):
 
 def _is_float(t: str) -> bool:
     try:
-        float(t); return True
+        float(t)
+        return True
     except ValueError:
         return False
 

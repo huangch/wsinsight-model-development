@@ -4,10 +4,10 @@ End-to-end, **headless** CLI to train [WSInsight](https://github.com/huangch/wsi
 CellViT cell-classification heads from paired **10x Xenium + H&E** — no GUI, no
 QuPath required. Distribution `wsinsight-train`; package + command `wsitrain`.
 
-KurtoRank labels Xenium cells, nuclei are segmented on H&E (Cellpose default,
-StarDist optional), labels transfer by ST2WSI registration (affine + B-spline),
-tiles train a CellViT head, and the result is exported as a wsinsight-ready
-model folder.
+KurtoRank labels Xenium cells, nuclei are segmented on H&E (StarDist default,
+Cellpose optional), labels transfer by ST2WSI registration (SIFT affine by
+default, optional bUnwarpJ B-spline), tiles train a CellViT head, and the
+result is exported as a wsinsight-ready model folder.
 
 ---
 
@@ -33,47 +33,66 @@ registration files live in `outs/`:
     cells.parquet
     analysis/clustering/gene_expression_graphclust/clusters.csv
     celltype_assignment_<task>_label.csv        # from kurtorank annotate
-    registration_params.json + direct_transf.txt # from ST2WSI (affine+bspline)
+    registration_params.json                    # from ST2WSI (SIFT affine)
+    direct_transf.txt                           # optional; only --transform affine+bspline
   *_he_image.ome.tif
 ```
 
 A sample is "aligned" if registration files exist (or the H&E is already
-pixel-aligned). `wsitrain check` writes an editable `wsitrain_samples.csv`.
+pixel-aligned). `wsitrain check` lists what it found in
+`<output>/wsitrain_samples.csv`; that file is a report, not an input.
 
 ## Commands
 
 ```bash
-wsitrain check --input DIR [--tissue T]     # preflight: samples + env + GPU
+wsitrain check --input DIR [--tissue T] [--output DIR]  # preflight: samples + env + GPU
 wsitrain run --input DIR --tissue T ...      # full pipeline
+wsitrain <stage> --input DIR --tissue T ...  # one stage, e.g. wsitrain segment
 wsitrain --version
 ```
 
 Training scope via `--tissue`: one (`breast`), subset (`breast,lung`), or all
 (`pantissue`). Stages: `annotate → segment → transfer → tile → split → train →
-validate → export`; choose what to run with `--stage-only` / `--stage-skip`, resume via
-`manifest.json`.
+validate → export → report`, and each is also a command of its own.
+
+Run the lot with `wsitrain run` (drop stages with `--run-skip a b`), or drive the
+pipeline one command at a time. A stage command refuses to start unless the
+stages it depends on are marked done in the manifest and their output is still
+there, so `wsitrain tile` on a fresh `--output` tells you to run `transfer`
+first rather than producing an empty tile set. Each stage command offers only
+the flags its own stage reads; anything else it needs is carried over from the
+config the previous command wrote into `--output`. Pass `--reset-config` to
+ignore that carried-over config and start from the shipped defaults. Completed
+stages are skipped on re-run (`--force` overrides, and also discards the masks
+segment would otherwise reuse).
 
 Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|sthelar_cancer_normal|
 hne|pantissue|pannuke|lcp`, default `sthelar_full`), `--segmenter cellpose|stardist`,
 `--transform affine+bspline|affine|none`, `--tune N` (auto-tune iters), `--gpus auto`.
+`--gpus cpu` disables the GPU for segmentation only; CellViT training needs a
+device index, so the split stage refuses it.
 
 ## Scripts
 
 ```bash
-bash scripts/train_one_tissue.sh data/xenium breast    # + cellpose/stardist parity
-bash scripts/train_multi_tissue.sh data/xenium breast,lung   # pooled subset
-bash scripts/train_pantissue.sh                        # all tissues pooled (with OOM guards + auto-tune)
+bash scripts/train_one_tissue_by_tile.sh breast [input_dir] [output_dir]
+bash scripts/train_tissues_by_tile.sh breast,lung [input_dir] [output_dir]  # pooled subset
+bash scripts/train_pantissue_by_tile.sh [input_dir] [output_dir]            # all tissues pooled
 ```
-Override: `TASK=hne ENVBIN=... CELLVIT_ROOT=... bash scripts/...`.
+Env overrides: `TASK`, `SEGMENTER`, `STARDIST_MODEL_DIR`, `VAL_FRAC`, `SEED`,
+`TUNE`, `RUN_SKIP`, `GPUS`, `ENVBIN`, `CELLVIT_ROOT`.
 Caches default to `/workspace/.cellpose` + `/workspace/.torch`; tmp to `/tmp`.
 
 ## Outputs (under `--output`)
 
 ```
-models/<tissue>/main/   config.json + torchscript/.pth + label_map.yaml  (wsinsight-ready)
-report/<tissue>/        confusion + classification report + tuning_log
-trainingset/<tissue>/   tiles, label_map, splits, train_configs
-masks/, nuclei/         intermediate; run.yaml + manifest.json
+models/<tissue>/main/   config.json + torchscript_model.pt + label_map.yaml  (wsinsight-ready)
+report/<tissue>/        confusion_matrix.png, scores.json, summary.txt, tuning_log.jsonl
+trainingset/<tissue>/   tiles, label_map.yaml, splits/, train_configs/
+logs/<tissue>/          CellViT run dirs (checkpoints + val_results)
+masks/, nuclei/         intermediates
+run-<tissue>.yaml       resolved config, inherited by the next command
+manifest-<tissue>.json  per-stage status
 ```
 
 ## Pan-cancer vs subset

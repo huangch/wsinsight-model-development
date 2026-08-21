@@ -43,7 +43,9 @@ def _find_run_dir(cfg, out: Path, *, required: bool = True):
         cands = sorted(root.rglob("checkpoints/model_best.pth"),
                        key=lambda p: p.stat().st_mtime)
         if needs_tag:
-            cands = [p for p in cands if tag in str(p).lower()]
+            # _run_tag only lowercases the backbone; the path is compared
+            # lowercased, so a capitalised --tissue/--task would never match.
+            cands = [p for p in cands if tag.lower() in str(p).lower()]
         if cands:
             return cands[-1].parent.parent
     if required:
@@ -217,7 +219,7 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
                 raise RuntimeError(
                     f"{s.sample_id}: {wanted} is missing and kurtorank is not on "
                     f"PATH. Install it (pip install kurtorank) or skip this stage "
-                    f"with --stage-skip annotate if the CSVs are provided another way.")
+                    f"with --run-skip annotate if the CSVs are provided another way.")
         # kurtorank needs a concrete tissue; cfg.tissue may be "pantissue" or a comma list.
         cmd = [exe, "annotate", "--xenium-dir", str(s.outs),
                "--tissue-type", s.tissue, "--output-dir", str(s.outs),
@@ -237,8 +239,49 @@ def annotate(cfg, samples, out: Path) -> dict[str, Any]:
     return {"n_samples": len(samples), "assignments": done}
 
 
+def _segment_recipe(cfg) -> dict[str, Any]:
+    """The settings that decide what a mask contains.
+
+    Only the chosen backend's knobs count: re-segmenting a stardist cohort
+    because --cellpose-model moved would cost hours for an identical result.
+    """
+    recipe: dict[str, Any] = {"segmenter": cfg.segmenter, "mpp": cfg.mpp}
+    if cfg.segmenter == "cellpose":
+        recipe.update(cellpose_model=cfg.cellpose_model,
+                      cellpose_flow_threshold=cfg.cellpose_flow_threshold,
+                      diameter=cfg.diameter)
+    else:
+        recipe.update(
+            stardist_model=cfg.stardist_model,
+            stardist_model_dir=(str(cfg.stardist_model_dir)
+                                if cfg.stardist_model_dir else None))
+    return recipe
+
+
+def _segment_recipe_path(mask_dir: Path) -> Path:
+    # Beside the mask dir, not inside it: prereq treats a non-empty mask dir as
+    # proof that segmentation ran, and a lone sidecar is not that.
+    return mask_dir.parent / f"{mask_dir.name}.recipe.json"
+
+
+def reset_cache(stage: str, cfg, out: Path) -> None:
+    """Drop the per-file caches `--force` is expected to invalidate.
+
+    Marking a stage not-done is not enough for stages that skip work per input
+    file; segment reuses any mask already on disk, so --force would be a no-op.
+    """
+    if stage != "segment":
+        return
+    mask_dir = paths.masks_dir(out, cfg.tissue)
+    for p in mask_dir.glob("*.npy"):
+        p.unlink()
+    _segment_recipe_path(mask_dir).unlink(missing_ok=True)
+
+
 def segment(cfg, samples, out: Path) -> dict[str, Any]:
     """Segment nuclei on each H&E (Cellpose/StarDist) → instance masks .npy."""
+    import json
+
     import numpy as np
 
     from ..segment import get_segmenter
@@ -258,13 +301,23 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
                         stardist_model=cfg.stardist_model,
                         stardist_model_dir=cfg.stardist_model_dir,
                         stardist_cpu=cfg.stardist_cpu)
-    mask_dir = out / "masks" / cfg.tissue
+    mask_dir = paths.masks_dir(out, cfg.tissue)
     mask_dir.mkdir(parents=True, exist_ok=True)
+    # The mask filename carries no segmenter, so without this a cellpose run
+    # would silently adopt (and report as its own) masks StarDist wrote.
+    recipe = _segment_recipe(cfg)
+    recipe_path = _segment_recipe_path(mask_dir)
+    previous = json.loads(recipe_path.read_text()) if recipe_path.exists() else None
+    stale = previous is not None and previous != recipe
+    if stale:
+        print(f"[segment] settings changed since the existing masks "
+              f"({previous} -> {recipe}); re-segmenting")
+    recipe_path.write_text(json.dumps(recipe, sort_keys=True))
     counts = {}
     from tqdm import tqdm
     for s in tqdm(samples, desc="segment", unit="slide", ascii=" =", dynamic_ncols=True):
         dst = mask_dir / f"{s.sample_id}.npy"
-        if dst.exists():
+        if dst.exists() and not stale:
             counts[s.sample_id] = int(np.load(dst, mmap_mode="r").max())
             continue
         he = read_he_rgb(s.he)
@@ -290,8 +343,8 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     import numpy as np
     import pandas as pd
 
-    mask_dir = out / "masks" / cfg.tissue
-    nuc_dir = out / "nuclei" / cfg.tissue
+    mask_dir = paths.masks_dir(out, cfg.tissue)
+    nuc_dir = paths.nuclei_dir(out, cfg.tissue)
     nuc_dir.mkdir(parents=True, exist_ok=True)
 
     def _nucleus_xy(outs: Path, cells: pd.DataFrame) -> pd.DataFrame:
@@ -373,6 +426,11 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
                     f"{s.sample_id}: --transform {cfg.transform} needs {params}, "
                     f"which is missing. Register with ST2WSI first, or pass "
                     f"--transform none to scale by mpp alone.")
+            if cfg.transform == "affine+bspline" and not elastic.exists():
+                raise RuntimeError(
+                    f"{s.sample_id}: --transform affine+bspline needs {elastic}, "
+                    f"which is missing. Pass --transform affine to use the SIFT "
+                    f"affine alone.")
             # target_wh = full-res H&E (target) dims; the nucleus mask is at that
             # resolution, so its shape supplies the bUnwarpJ lattice extent.
             xy = map_cells(df[["x_um", "y_um"]].to_numpy(), params,
@@ -385,11 +443,13 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
         """Nucleus id under each point, searching outward to ``radius``.
 
         Out-of-bounds points are reported as 0 rather than clipped onto the
-        border, which would manufacture matches along the slide edge.
+        border, which would manufacture matches along the slide edge. Points
+        that are themselves inside stay eligible: it is the *neighbour* offset
+        that is clamped, so a cell within ``radius`` of the edge is not lost.
         """
         h, w = mask.shape
         r = max(int(radius), 0)
-        inb = (xpx >= r) & (xpx < w - r) & (ypx >= r) & (ypx < h - r)
+        inb = (xpx >= 0) & (xpx < w) & (ypx >= 0) & (ypx < h)
         nid = np.zeros(len(xpx), mask.dtype)
         xi, yi = xpx[inb], ypx[inb]
         got = mask[yi, xi]
@@ -401,7 +461,8 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
             todo = got == 0
             if not todo.any():
                 break
-            got[todo] = mask[yi[todo] + dy, xi[todo] + dx]
+            got[todo] = mask[np.clip(yi[todo] + dy, 0, h - 1),
+                             np.clip(xi[todo] + dx, 0, w - 1)]
         nid[inb] = got
         return nid
 
@@ -425,7 +486,14 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
     for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
         df = frames.pop(s.sample_id)  # release each frame as we go
         # Only scattered points are read, so the mask never needs to be resident.
-        mask = np.load(mask_dir / f"{s.sample_id}.npy", mmap_mode="r")
+        mask_path = mask_dir / f"{s.sample_id}.npy"
+        if not mask_path.exists():
+            raise SystemExit(
+                f"[transfer] no mask for {s.sample_id}: {mask_path} is missing. "
+                "The segment stage ran over a different sample set (most often "
+                "because --transform changed); re-run `wsitrain segment` with "
+                "the transform this command is using.")
+        mask = np.load(mask_path, mmap_mode="r")
         xpx, ypx = _to_px(s, df, mask)
         nid = _lookup(mask, xpx, ypx, cfg.match_radius_px)
         df = df.assign(x_px=xpx, y_px=ypx, nucleus_id=nid,
@@ -484,11 +552,10 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     mostly-background mean RGB > bg_thresh are dropped. Coordinates in each CSV
     are tile-local pixels.
     """
-    import numpy as np
     import pandas as pd
     from PIL import Image
 
-    nuc_dir = out / "nuclei" / cfg.tissue
+    nuc_dir = paths.nuclei_dir(out, cfg.tissue)
     img_dir = paths.images_dir(out, cfg.tissue)
     lab_dir = paths.labels_dir(out, cfg.tissue)
     img_dir.mkdir(parents=True, exist_ok=True)
@@ -514,7 +581,7 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
                     patch = reader.window(y0, x0, cfg.tile_px, cfg.tile_px)
                     if float(patch.mean()) > cfg.bg_thresh:
                         continue
-                    stem = f"{s.sample_id}_tile_{ti * 10000 + tj:05d}"
+                    stem = f"{s.sample_id}_tile_{ti:05d}_{tj:05d}"
                     Image.fromarray(patch).save(img_dir / f"{stem}.png")
                     sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
                         lab_dir / f"{stem}.csv", header=False, index=False)
@@ -552,8 +619,7 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     cellvit = os.environ.get("CELLVIT_ROOT")
     if not cellvit or not Path(cellvit).is_dir():
         raise RuntimeError("set $CELLVIT_ROOT to the CellViT-plus-plus checkout")
-    cfg_path = (paths.tissue_root(out, cfg.tissue) / "train_configs"
-                / cfg.backbone / f"{cfg.fold}.yaml")
+    cfg_path = paths.train_config_path(out, cfg.tissue, cfg.backbone, cfg.fold)
     if not cfg_path.exists():
         raise RuntimeError(f"missing train config: {cfg_path}")
     py = shutil.which("python3") or "python"
@@ -578,8 +644,6 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
     """
     import json
     import shutil
-
-    import numpy as np
 
     run_dir = _find_run_dir(cfg, out)
     val_results_dir = run_dir / "val_results"
@@ -616,7 +680,8 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
 
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         for ax, mat, title, fmt in zip(axes, [cm, cm_norm],
-                                       ["Counts", "Normalised"], ["d", ".2f"]):
+                                       ["Counts", "Normalised"], ["d", ".2f"],
+                                       strict=True):
             disp = ConfusionMatrixDisplay(confusion_matrix=mat, display_labels=class_names)
             disp.plot(ax=ax, colorbar=False, xticks_rotation="vertical",
                       cmap=CONFUSION_CMAP, values_format=fmt)
@@ -625,6 +690,11 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
         fig.savefig(rd / "confusion_matrix.png", dpi=150)
         plt.close(fig)
 
+    if not metrics and not (pred_pt.exists() and gt_pt.exists()):
+        # Returning quietly here reads as "validated, nothing to report".
+        print(f"[validate] WARNING: no scores.json or predictions.pt under "
+              f"{val_results_dir}; the trainer writes them only when it saves a "
+              f"new best checkpoint. Nothing was scored — check the train log.")
     return {"run_dir": str(run_dir), "metrics": metrics}
 
 

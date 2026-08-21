@@ -48,6 +48,21 @@ wsitrain = "wsitrain.cli:main"
 testpaths = ["tests"]
 addopts = "-q"
 
+[tool.ruff]
+# Same ruleset as wsinsight/sptxinsight, minus their isort force-single-line:
+# this package groups its imports and reflowing them all would bury the diff.
+extend-exclude = ["scripts/"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B"]
+unfixable = ["B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Every stage imports its heavy deps inside the function body, so the package
+# stays importable without a GPU stack.
+"wsitrain/stages/__init__.py" = ["E402"]
+
 [tool.setuptools]
 packages = ["wsitrain", "wsitrain.stages"]
 

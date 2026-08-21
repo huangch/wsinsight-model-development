@@ -63,7 +63,8 @@ def weakest_class(run_dir: Path) -> int | None:
 
 def apply_lever(lever, weights, drop, lr, weak):
     if lever == "weight" and weak is not None and weights is not None:
-        weights = list(weights); weights[weak] *= WEIGHT_BOOST
+        weights = list(weights)
+        weights[weak] *= WEIGHT_BOOST
     elif lever == "drop":
         drop = round(min(drop + DROP_STEP, 0.5), 3)
     elif lever == "lr":
@@ -122,7 +123,10 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
             weights, drop, lr = cand_w, cand_drop, cand_lr
             rejects = 0
         else:
-            # Keep the previous config: a rejected lever must not compound.
+            # Keep the previous config: a rejected lever must not compound. The
+            # run dir goes back too, or the next weakest_class() would read the
+            # class balance of the run we just threw away.
+            run_dir = best_run
             rejects += 1
             li += 1
             if rejects >= 2:

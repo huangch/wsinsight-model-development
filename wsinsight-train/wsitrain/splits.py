@@ -85,7 +85,7 @@ def _repair_class_coverage(val_g: set[str], pool: list[str],
 
 
 def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
-                by_slide: bool = True, seed: int = 42) -> SplitResult:
+                by_slide: bool = False, seed: int = 42) -> SplitResult:
     label_dir = Path(label_dir)
     if not label_dir.is_dir():
         raise FileNotFoundError(f"label dir not found: {label_dir}")

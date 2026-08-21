@@ -33,7 +33,7 @@ def load_label_map(path: Path) -> dict[int, str]:
         val = val.strip()
         if val[:1] in ('"', "'"):
             # Quoted names may legitimately contain ':' or '#'.
-            quote, end = val[0], val.find(val[0], 1)
+            end = val.find(val[0], 1)
             val = val[1:end] if end > 0 else val[1:]
         else:
             val = val.split("#", 1)[0].strip()
@@ -78,7 +78,9 @@ def compute_weights(label_map_path: Path, label_dir: Path, *,
     raw, capped = [], []
     for ci, p in enumerate(pct):
         if p <= 0:
-            raw.append(cap); capped.append(ci); continue
+            raw.append(cap)
+            capped.append(ci)
+            continue
         inv = cap / p
         if inv >= cap:
             capped.append(ci)

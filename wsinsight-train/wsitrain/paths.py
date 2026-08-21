@@ -7,6 +7,8 @@ portable and never writes into its own install tree. Workdir layout:
     <output>/
       run-<tissue>.yaml      resolved config
       manifest-<tissue>.json per-stage status + provenance
+      masks/<tissue>/       per-slide instance masks (.npy)
+      nuclei/<tissue>/      per-slide labelled nuclei (.csv)
       trainingset/<tissue>/ label_map.yaml, train/{images,labels}, splits/, train_configs/
       models/<tissue>/      promoted head + side-car
       report/<tissue>/      confusion + classification report
@@ -17,11 +19,26 @@ from pathlib import Path
 
 
 def _slug(tissue: str) -> str:
-    return tissue.replace("/", "_").replace(" ", "_")
+    """Filesystem-safe tissue selector; `--tissue` may be a list ('breast,lung')."""
+    out = tissue.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    # A tissue of '..' would otherwise walk out of --output.
+    return out.strip(".") or "unnamed"
 
 
 def tissue_root(out: Path, tissue: str) -> Path:
-    return out / "trainingset" / tissue
+    return out / "trainingset" / _slug(tissue)
+
+
+def masks_dir(out: Path, tissue: str) -> Path:
+    return out / "masks" / _slug(tissue)
+
+
+def nuclei_dir(out: Path, tissue: str) -> Path:
+    return out / "nuclei" / _slug(tissue)
+
+
+def train_config_path(out: Path, tissue: str, backbone: str, fold: str) -> Path:
+    return tissue_root(out, tissue) / "train_configs" / backbone / f"{fold}.yaml"
 
 
 def images_dir(out: Path, tissue: str) -> Path:
@@ -41,15 +58,15 @@ def splits_dir(out: Path, tissue: str, fold: str) -> Path:
 
 
 def models_dir(out: Path, tissue: str) -> Path:
-    return out / "models" / tissue
+    return out / "models" / _slug(tissue)
 
 
 def report_dir(out: Path, tissue: str) -> Path:
-    return out / "report" / tissue
+    return out / "report" / _slug(tissue)
 
 
 def logs_dir(out: Path, tissue: str) -> Path:
-    return out / "logs" / tissue
+    return out / "logs" / _slug(tissue)
 
 
 def manifest_path(out: Path, tissue: str) -> Path:

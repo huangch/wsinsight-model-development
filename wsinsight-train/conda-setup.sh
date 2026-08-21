@@ -73,17 +73,16 @@ pip install -c "${CONSTRAINTS}" "numpy<2" stardist tensorflow \
 # Using an already-downloaded StarDist model (offline / air-gapped hosts).
 # Without one, StarDist2D.from_pretrained() fetches the weights at first run.
 # A csbdeep model folder is <parent>/<model-name>/ holding config.json,
-# thresholds.json and weights_best.h5. Two ways to point wsitrain at it:
+# thresholds.json and weights_best.h5. wsitrain looks for the PARENT directory
+# in this order and takes the first hit:
 #
-#   1. Drop it in the default cache and nothing else is needed:
-#        ~/.keras/models/StarDist2D/2D_versatile_he/
-#      NOTE: that path is hard-coded in wsitrain/segment.py (STARDIST_CACHE);
-#      KERAS_HOME is NOT consulted, so moving the Keras cache will not work.
-#
-#   2. Keep it anywhere and pass the PARENT directory:
-#        wsitrain run ... --stardist-model-dir /data/models/StarDist2D
+#   1. wsitrain run ... --stardist-model-dir /data/models/StarDist2D
 #      (equivalently `stardist_model_dir:` in wsitrain/defaults/run.yaml).
-#      Combine with --stardist-model NAME if the folder is not 2D_versatile_he.
+#   2. $WSITRAIN_STARDIST_DIR   -- same meaning, set once per host.
+#   3. $KERAS_HOME/models/StarDist2D
+#   4. ~/.keras/models/StarDist2D  -- the default csbdeep cache.
+#
+# Add --stardist-model NAME if the folder is not named 2D_versatile_he.
 
 # Runtime + test deps not covered by the heavy stack above.
 # zarr is what keeps the tile stage from loading whole slides into RAM.
@@ -143,11 +142,15 @@ python -c 'import stardist' >/dev/null 2>&1 \
     || echo "  WARN  stardist unavailable; use --segmenter cellpose (non-fatal)"
 # Reported, not enforced: without a local copy the weights are downloaded on the
 # first run, which an offline host cannot do.
-if [[ -f "${HOME}/.keras/models/StarDist2D/2D_versatile_he/config.json" ]]; then
-    echo "  PASS  2D_versatile_he cached in ~/.keras/models/StarDist2D"
+# wsitrain.segment owns the lookup order, so ask it instead of retyping paths.
+STARDIST_DIR=$(python -c 'from wsitrain.segment import _cached_stardist_dir
+print(_cached_stardist_dir("2D_versatile_he") or "")' 2>/dev/null)
+if [[ -n "${STARDIST_DIR}" ]]; then
+    echo "  PASS  2D_versatile_he found in ${STARDIST_DIR}"
 else
     echo "  INFO  2D_versatile_he not cached; it downloads on first run."
-    echo "        Offline: unpack it to ~/.keras/models/StarDist2D/2D_versatile_he/"
+    echo "        Offline: unpack it to ~/.keras/models/StarDist2D/2D_versatile_he/,"
+    echo "        export WSITRAIN_STARDIST_DIR=<parent-of-model-folder>,"
     echo "        or pass --stardist-model-dir <parent-of-model-folder>."
 fi
 

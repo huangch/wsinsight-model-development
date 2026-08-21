@@ -11,6 +11,13 @@ import pytest
 from wsitrain import segment
 
 
+@pytest.fixture(autouse=True)
+def _clear_stardist_env(monkeypatch):
+    """A developer's own KERAS_HOME must not decide where these tests look."""
+    monkeypatch.delenv("WSITRAIN_STARDIST_DIR", raising=False)
+    monkeypatch.delenv("KERAS_HOME", raising=False)
+
+
 class _DummyCellpose:
     def __init__(self, gpu, model_type):
         self.gpu = gpu
@@ -150,6 +157,88 @@ def test_explicit_dir_beats_the_cache(monkeypatch, tmp_path):
     seg = segment.get_segmenter("stardist", stardist_model_dir="/explicit")
     seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
     assert seen["basedir"] == "/explicit"
+
+
+def _stardist_probe(monkeypatch, tmp_path):
+    """Fake StarDist2D that records the basedir it was handed."""
+    seen = {}
+
+    class FakeModel:
+        def __init__(self, config, name=None, basedir=None):
+            seen["basedir"] = basedir
+
+        @staticmethod
+        def from_pretrained(name):
+            seen["downloaded"] = True
+            return FakeModel(None)
+
+        def predict_instances(self, img):
+            return np.zeros(img.shape[:2], np.int32), None
+
+    _install_fake_stardist(monkeypatch, FakeModel)
+    monkeypatch.setattr(segment, "STARDIST_CACHE", tmp_path / "empty")
+    return seen
+
+
+def _unpack_model(root, name="2D_versatile_he"):
+    (root / name).mkdir(parents=True)
+    (root / name / "config.json").write_text("{}")
+    return root
+
+
+def test_wsitrain_stardist_dir_env_is_used(monkeypatch, tmp_path):
+    """Offline hosts keep the model outside the Keras cache."""
+    seen = _stardist_probe(monkeypatch, tmp_path)
+    models = _unpack_model(tmp_path / "models")
+    monkeypatch.setenv("WSITRAIN_STARDIST_DIR", str(models))
+
+    segment.get_segmenter("stardist").segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["basedir"] == str(models)
+    assert "downloaded" not in seen
+
+
+def test_keras_home_env_is_used(monkeypatch, tmp_path):
+    """Moving the Keras cache off $HOME must not force a re-download."""
+    seen = _stardist_probe(monkeypatch, tmp_path)
+    models = _unpack_model(tmp_path / "keras" / "models" / "StarDist2D")
+    monkeypatch.setenv("KERAS_HOME", str(tmp_path / "keras"))
+
+    segment.get_segmenter("stardist").segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["basedir"] == str(models)
+    assert "downloaded" not in seen
+
+
+def test_wsitrain_env_beats_keras_home(monkeypatch, tmp_path):
+    seen = _stardist_probe(monkeypatch, tmp_path)
+    explicit = _unpack_model(tmp_path / "explicit")
+    _unpack_model(tmp_path / "keras" / "models" / "StarDist2D")
+    monkeypatch.setenv("WSITRAIN_STARDIST_DIR", str(explicit))
+    monkeypatch.setenv("KERAS_HOME", str(tmp_path / "keras"))
+
+    segment.get_segmenter("stardist").segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["basedir"] == str(explicit)
+
+
+def test_flag_beats_the_env_vars(monkeypatch, tmp_path):
+    seen = _stardist_probe(monkeypatch, tmp_path)
+    monkeypatch.setenv("WSITRAIN_STARDIST_DIR", str(_unpack_model(tmp_path / "env")))
+
+    seg = segment.get_segmenter("stardist", stardist_model_dir="/explicit")
+    seg.segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["basedir"] == "/explicit"
+
+
+def test_env_pointing_nowhere_falls_back_to_download(monkeypatch, tmp_path):
+    seen = _stardist_probe(monkeypatch, tmp_path)
+    monkeypatch.setenv("WSITRAIN_STARDIST_DIR", str(tmp_path / "missing"))
+
+    segment.get_segmenter("stardist").segment(np.zeros((8, 8, 3), np.uint8), mpp=0.25)
+
+    assert seen["downloaded"] is True
 
 
 def test_stardist_cpu_hides_gpus_from_tensorflow_only(monkeypatch, tmp_path):

@@ -14,13 +14,29 @@ from typing import Protocol
 
 import numpy as np
 
-# Where csbdeep unpacks pretrained StarDist models.
+# Where csbdeep unpacks pretrained StarDist models when KERAS_HOME is unset.
 STARDIST_CACHE = Path(os.path.expanduser("~/.keras/models/StarDist2D"))
+
+
+def _stardist_search_dirs() -> list[Path]:
+    """Candidate parents of a csbdeep model folder, most specific first."""
+    dirs = []
+    override = os.environ.get("WSITRAIN_STARDIST_DIR")
+    if override:
+        dirs.append(Path(override).expanduser())
+    keras_home = os.environ.get("KERAS_HOME")
+    if keras_home:
+        dirs.append(Path(keras_home).expanduser() / "models" / "StarDist2D")
+    dirs.append(STARDIST_CACHE)
+    return dirs
 
 
 def _cached_stardist_dir(name: str) -> Path | None:
     """csbdeep re-downloads the zip even when the folder is already unpacked."""
-    return STARDIST_CACHE if (STARDIST_CACHE / name / "config.json").is_file() else None
+    for base in _stardist_search_dirs():
+        if (base / name / "config.json").is_file():
+            return base
+    return None
 
 
 # XLA needs a full CUDA toolkit (ptxas + libdevice), which a driver-only host lacks.

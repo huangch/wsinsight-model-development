@@ -128,7 +128,8 @@ def main(argv=None) -> int:
     g.add_argument("--cellpose-model", default=None, help="cellpose model name")
     g.add_argument("--stardist-model", default=None, help="stardist model name")
     g.add_argument("--stardist-model-dir", type=Path, default=None,
-                   help="parent of the stardist model folder; avoids downloading")
+                   help="parent of the stardist model folder; avoids downloading "
+                        "(env fallback: WSITRAIN_STARDIST_DIR, then KERAS_HOME)")
     g.add_argument("--stardist-cpu", action="store_true", default=None,
                    help="run StarDist on CPU (no CUDA toolkit); torch keeps the GPU")
     g.add_argument("--diameter", type=float, default=None,

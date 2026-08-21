@@ -7,7 +7,8 @@ segmenter: stardist          # cellpose | stardist
 cellpose_model: cpsam
 stardist_model: 2D_versatile_he
 # Parent of the csbdeep model folder, e.g. ~/.keras/models/StarDist2D.
-# null downloads it, which needs network access.
+# null falls back to $WSITRAIN_STARDIST_DIR, then $KERAS_HOME/models/StarDist2D,
+# then ~/.keras/models/StarDist2D, and finally downloads (needs network access).
 stardist_model_dir: null
 stardist_cpu: false          # run StarDist on CPU; torch/CellViT keep the GPU
 diameter: null               # nucleus diameter in MICRONS; null => auto

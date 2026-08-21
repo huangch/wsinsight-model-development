@@ -10,6 +10,7 @@
 #
 # Installs: torch + cellpose + kurtorank + wsitrain (+ optional stardist).
 # kurtorank is installed editable from the sibling repo (not on PyPI).
+# See the StarDist block below for pointing wsitrain at a pre-downloaded model.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd 2>/dev/null || true)"
@@ -69,6 +70,21 @@ pip install -c "${CONSTRAINTS}" cellpose
 pip install -c "${CONSTRAINTS}" "numpy<2" stardist tensorflow \
     || echo "WARNING: stardist install failed; use --segmenter cellpose"
 
+# Using an already-downloaded StarDist model (offline / air-gapped hosts).
+# Without one, StarDist2D.from_pretrained() fetches the weights at first run.
+# A csbdeep model folder is <parent>/<model-name>/ holding config.json,
+# thresholds.json and weights_best.h5. Two ways to point wsitrain at it:
+#
+#   1. Drop it in the default cache and nothing else is needed:
+#        ~/.keras/models/StarDist2D/2D_versatile_he/
+#      NOTE: that path is hard-coded in wsitrain/segment.py (STARDIST_CACHE);
+#      KERAS_HOME is NOT consulted, so moving the Keras cache will not work.
+#
+#   2. Keep it anywhere and pass the PARENT directory:
+#        wsitrain run ... --stardist-model-dir /data/models/StarDist2D
+#      (equivalently `stardist_model_dir:` in wsitrain/defaults/run.yaml).
+#      Combine with --stardist-model NAME if the folder is not 2D_versatile_he.
+
 # Runtime + test deps not covered by the heavy stack above.
 # zarr is what keeps the tile stage from loading whole slides into RAM.
 pip install -c "${CONSTRAINTS}" pyarrow pytest zarr pyyaml tifffile pillow tqdm
@@ -125,6 +141,15 @@ smoke "numpy < 2"            python -c 'import numpy, sys; sys.exit(int(numpy.__
 python -c 'import stardist' >/dev/null 2>&1 \
     && echo "  PASS  stardist importable" \
     || echo "  WARN  stardist unavailable; use --segmenter cellpose (non-fatal)"
+# Reported, not enforced: without a local copy the weights are downloaded on the
+# first run, which an offline host cannot do.
+if [[ -f "${HOME}/.keras/models/StarDist2D/2D_versatile_he/config.json" ]]; then
+    echo "  PASS  2D_versatile_he cached in ~/.keras/models/StarDist2D"
+else
+    echo "  INFO  2D_versatile_he not cached; it downloads on first run."
+    echo "        Offline: unpack it to ~/.keras/models/StarDist2D/2D_versatile_he/"
+    echo "        or pass --stardist-model-dir <parent-of-model-folder>."
+fi
 
 if [[ -d "${SCRIPT_DIR}/tests" ]]; then
     python -m pytest "${SCRIPT_DIR}/tests" -q \

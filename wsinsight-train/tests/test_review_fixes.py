@@ -7,6 +7,8 @@ import io
 import json
 import os
 import signal
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +16,7 @@ import pytest
 import tifffile
 
 import wsitrain  # noqa: F401  -- installs the tqdm hardening on import
-from wsitrain import dag, paths, segment as segment_mod, stages
+from wsitrain import dag, paths, segment as segment_mod, stages, subproc
 from wsitrain.cli import main
 from wsitrain.config import build_config
 from wsitrain.dataset import Sample, _find_he
@@ -445,3 +447,56 @@ def test_a_disabled_bar_does_not_cost_the_others_their_repaint():
         painted = buf.getvalue()
 
     assert "50%" in painted
+
+
+# --------------------------------------------------------------------------
+# tqdm in the CellViT subprocesses, which never import wsitrain
+# --------------------------------------------------------------------------
+
+def test_child_env_puts_the_shim_ahead_of_cellvit():
+    env = subproc.child_env("/opt/CellViT")
+    first, _, rest = env["PYTHONPATH"].partition(os.pathsep)
+    assert first.endswith("tqdmshim")
+    assert (Path(first) / "sitecustomize.py").is_file()
+    assert rest == "/opt/CellViT"
+
+
+def test_a_child_process_gets_the_ascii_bars_and_the_winch_handler(tmp_path):
+    """The bars CellViT draws were unstyled because it is a separate process."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import io, signal\n"
+        "from tqdm import tqdm\n"
+        "b = tqdm(range(10), file=io.StringIO())\n"
+        "print(repr(b.ascii), bool(b.dynamic_ncols),\n"
+        "      callable(signal.getsignal(signal.SIGWINCH)))\n")
+
+    out = subprocess.run([sys.executable, str(probe)], env=subproc.child_env("/opt/CellViT"),
+                         capture_output=True, text=True, timeout=120)
+
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "' =' True True", out.stdout
+
+
+@pytest.mark.parametrize("stage", ["train", "export"])
+def test_cellvit_stages_launch_with_the_shim(stage, cfg_factory, tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setenv("CELLVIT_ROOT", str(tmp_path))
+    # The stages import subprocess inside the function, so patch the module.
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: seen.update(kw) or None)
+    cfg = cfg_factory()
+    if stage == "train":
+        paths.train_config_path(cfg.output, cfg.tissue, cfg.backbone,
+                                cfg.fold).parent.mkdir(parents=True)
+        paths.train_config_path(cfg.output, cfg.tissue, cfg.backbone,
+                                cfg.fold).write_text("x")
+    else:
+        run = paths.logs_dir(cfg.output, cfg.tissue) / "r" / "checkpoints"
+        run.mkdir(parents=True)
+        (run / "model_best.pth").write_text("w")
+        paths.label_map_path(cfg.output, cfg.tissue).parent.mkdir(parents=True, exist_ok=True)
+        paths.label_map_path(cfg.output, cfg.tissue).write_text('0: "a"\n')
+
+    getattr(stages, stage)(cfg, [], cfg.output)
+
+    assert seen["env"]["PYTHONPATH"].split(os.pathsep)[0].endswith("tqdmshim")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -186,7 +187,10 @@ def test_train_invokes_trainer_with_config(tmp_path, cfg_factory, monkeypatch, r
     call = recorder[0]
     assert str(cfg_path) in call["cmd"]
     assert call["cmd"][1].endswith("train_cell_classifier_head.py")
-    assert call["env"]["PYTHONPATH"] == str(root)
+    # The tqdm shim leads; CellViT's root still has to be importable.
+    shim, _, cellvit = call["env"]["PYTHONPATH"].partition(os.pathsep)
+    assert shim.endswith("tqdmshim")
+    assert cellvit == str(root)
 
 
 # --------------------------------------------------------------------------

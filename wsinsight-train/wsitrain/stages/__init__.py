@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .. import paths, splits as splits_mod, weights as weights_mod
+from .. import paths, splits as splits_mod, subproc, weights as weights_mod
 
 CONFUSION_CMAP = "Blues"
 
@@ -623,8 +623,7 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     if not cfg_path.exists():
         raise RuntimeError(f"missing train config: {cfg_path}")
     py = shutil.which("python3") or "python"
-    env = os.environ.copy()
-    env["PYTHONPATH"] = cellvit  # CellViT++ requires its root on sys.path
+    env = subproc.child_env(cellvit)
     subprocess.run([py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
                     "--config", str(cfg_path)],
                    cwd=cellvit, env=env, check=True)
@@ -717,8 +716,7 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
 
     ts_out = dst / "torchscript_model.pt"
     py = shutil.which("python3") or "python"
-    env = os.environ.copy()
-    env["PYTHONPATH"] = cellvit
+    env = subproc.child_env(cellvit)
     subprocess.run(
         [py,
          str(Path(cellvit) / "cellvit" / "cellvit_convert_to_torchscript.py"),

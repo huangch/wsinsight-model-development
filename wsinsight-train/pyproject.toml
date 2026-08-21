@@ -67,4 +67,4 @@ unfixable = ["B"]
 packages = ["wsitrain", "wsitrain.stages"]
 
 [tool.setuptools.package-data]
-wsitrain = ["defaults/*.yaml"]
+wsitrain = ["defaults/*.yaml", "tqdmshim/*.py"]

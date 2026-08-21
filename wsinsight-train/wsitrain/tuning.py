@@ -77,7 +77,7 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     import os
     import subprocess
     from pathlib import Path
-    from . import configrender, paths, weights as weights_mod
+    from . import configrender, paths, subproc, weights as weights_mod
     from .stages import _find_run_dir
 
     run_dir = _find_run_dir(cfg, out, required=False)
@@ -103,12 +103,10 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
         cand_w, cand_drop, cand_lr = cand
         cp = configrender.render_config(cfg, out, drop_rate=cand_drop, lr=cand_lr,
                                         weights=cand_w)
-        _env = os.environ.copy()
-        _env["PYTHONPATH"] = cellvit
         subprocess.run(
             [py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
              "--config", str(cp)],
-            cwd=cellvit, env=_env, check=True,
+            cwd=cellvit, env=subproc.child_env(cellvit), check=True,
         )
         run_dir = _find_run_dir(cfg, out, required=False)
         f1, src = read_macro_f1(run_dir) if run_dir else (None, None)

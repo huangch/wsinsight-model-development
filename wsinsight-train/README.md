@@ -80,7 +80,8 @@ bash scripts/train_tissues_by_tile.sh breast,lung [input_dir] [output_dir]  # po
 bash scripts/train_pantissue_by_tile.sh [input_dir] [output_dir]            # all tissues pooled
 ```
 Env overrides: `TASK`, `SEGMENTER`, `STARDIST_MODEL_DIR`, `VAL_FRAC`, `SEED`,
-`TUNE`, `RUN_SKIP`, `GPUS`, `ENVBIN`, `CELLVIT_ROOT`.
+`TUNE`, `RUN_SKIP`, `FORCE`, `GPUS`, `ENVBIN`, `CELLVIT_ROOT`.
+Each script passes `--reset-config`, so its flags alone define the run.
 Caches default to `/workspace/.cellpose` + `/workspace/.torch`; tmp to `/tmp`.
 
 ## Outputs (under `--output`)

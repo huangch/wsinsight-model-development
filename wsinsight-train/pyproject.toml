@@ -39,7 +39,10 @@ docs = [
 stardist = ["stardist", "tensorflow"]
 # zarr lets the tile stage read windows instead of whole slides.
 lowmem = ["zarr"]
-dev = ["pytest"]
+dev = [
+  "pytest>=7",
+  "pytest-cov",
+]
 
 [project.scripts]
 wsitrain = "wsitrain.cli:main"

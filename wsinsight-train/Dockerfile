@@ -97,7 +97,7 @@ RUN pip install --retries 5 -c "$CONSTR" "numpy<2" stardist tensorflow || \
 # slides into RAM.
 # ------------------------------------
 RUN pip install --retries 10 -c "$CONSTR" \
-        pyarrow pyyaml tifffile pillow tqdm zarr pytest
+        pyarrow pyyaml tifffile pillow tqdm zarr
 
 # ------------------------------------
 # kurtorank's runtime deps. These are NOT a subset of the layers above — the
@@ -123,6 +123,16 @@ RUN pip install --no-deps -e /app/kurtorank
 # --no-deps for the same reason; its deps are installed above.
 # ------------------------------------
 RUN pip install --no-deps -e /app/wsinsight-train
+
+# ------------------------------------
+# Dev extras (test runner + coverage). Not part of the runtime image — strip
+# this layer in production builds by overriding the ``WSITRAIN_INSTALL_DEV``
+# build arg.
+# ------------------------------------
+ARG WSITRAIN_INSTALL_DEV=1
+RUN if [ "${WSITRAIN_INSTALL_DEV}" = "1" ]; then \
+        pip install --no-deps -e "/app/wsinsight-train[dev]"; \
+    fi
 
 # ------------------------------------
 # Sanity check (build-time)

@@ -1,0 +1,17 @@
+# Notebook outputs embed base64 images, so every save writes a fresh multi-MB
+# blob that git cannot delta-compress: kurtorank/notebooks accounts for 934 MB
+# of the ~1.1 GB of history here. Stripping outputs at commit time keeps that
+# from growing again.
+#
+# One-time setup per clone:  pre-commit install
+#
+# The lint hooks the sibling repos run (ruff, end-of-file-fixer, …) are left out
+# on purpose: this tree has never been linted, so enabling them would rewrite a
+# large number of unrelated files on the first commit.
+repos:
+  - repo: 'https://github.com/kynan/nbstripout'
+    rev: 0.9.1
+    hooks:
+      - id: nbstripout
+        # This one is published for its rendered figures, so its outputs stay.
+        exclude: '^notebooks/v1/kurtorank3\.ipynb$'

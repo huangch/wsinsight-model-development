@@ -67,6 +67,7 @@ census = [
 dev = [
   "pytest",
   "pytest-cov",
+  "pre_commit>=3",
 ]
 
 [project.scripts]

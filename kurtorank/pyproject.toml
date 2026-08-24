@@ -64,6 +64,11 @@ census = [
   "cellxgene-census",
   "tiledbsoma",
 ]
+# 2026-08-24: MCP server surface (`kurtorank-mcp` console script). Mirrors
+# the sibling `wsinsight[mcp]` / `hplot[mcp]` / `sptxinsight[mcp]` /
+# `wsinsight-train[mcp]` extras so every package in the workspace can be
+# driven from an LLM agent via the same Model Context Protocol.
+mcp = ["fastmcp>=2.0"]
 dev = [
   "pytest",
   "pytest-cov",
@@ -72,6 +77,7 @@ dev = [
 
 [project.scripts]
 kurtorank = "kurtorank.cli:_main"
+kurtorank-mcp = "kurtorank.mcp.__main__:main"
 
 [project.urls]
 Homepage = "https://github.com/pfizer/kurtorank"

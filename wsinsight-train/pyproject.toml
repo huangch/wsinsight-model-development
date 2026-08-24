@@ -39,6 +39,11 @@ docs = [
 stardist = ["stardist", "tensorflow"]
 # zarr lets the tile stage read windows instead of whole slides.
 lowmem = ["zarr"]
+# 2026-08-24: MCP server surface (`wsinsight-train-mcp` console script). Mirrors
+# the sibling `wsinsight[mcp]` / `hplot[mcp]` / `sptxinsight[mcp]` extras so
+# every package in the workspace can be driven from an LLM agent via the
+# same Model Context Protocol.
+mcp = ["fastmcp>=2.0"]
 dev = [
   "pytest>=7",
   "pytest-cov",
@@ -47,6 +52,7 @@ dev = [
 
 [project.scripts]
 wsitrain = "wsitrain.cli:main"
+wsinsight-train-mcp = "wsitrain.mcp.__main__:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -68,7 +74,7 @@ unfixable = ["B"]
 "wsitrain/stages/__init__.py" = ["E402"]
 
 [tool.setuptools]
-packages = ["wsitrain", "wsitrain.stages"]
+packages = ["wsitrain", "wsitrain.stages", "wsitrain.mcp"]
 
 [tool.setuptools.package-data]
 wsitrain = ["defaults/*.yaml", "tqdmshim/*.py"]

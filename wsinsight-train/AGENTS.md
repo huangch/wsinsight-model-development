@@ -6,7 +6,7 @@ Xenium + H&E. Produces a `models/<tissue>/main/` folder wsinsight loads with
 
 ## Environment (read first)
 
-- `bash ./conda-setup.sh -n wsitrain -r` installs torch + cellpose + kurtorank
+- `bash ./conda-setup.sh wsitrain -r` installs torch + cellpose + kurtorank
   + wsitrain. It installs kurtorank's dep tree explicitly before the editable
   install; do not "simplify" that back to `--no-deps`.
 - **The CellViT path needs `$CELLVIT_ROOT`** pointing at a CellViT-plus-plus

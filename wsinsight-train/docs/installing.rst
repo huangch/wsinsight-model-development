@@ -5,7 +5,7 @@ Recommended setup:
 
 .. code-block:: bash
 
-   bash conda-setup.sh -n wsitrain -r
+   bash conda-setup.sh wsitrain -r
    conda activate wsitrain
    export CELLVIT_ROOT=/path/to/CellViT-plus-plus
 

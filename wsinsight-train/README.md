@@ -14,7 +14,7 @@ result is exported as a wsinsight-ready model folder.
 ## Install
 
 ```bash
-bash conda-setup.sh -n wsitrain -r          # torch + cellpose + kurtorank + wsitrain
+bash conda-setup.sh wsitrain -r          # torch + cellpose + kurtorank + wsitrain
 conda activate wsitrain
 export CELLVIT_ROOT=/path/to/CellViT-plus-plus
 ```

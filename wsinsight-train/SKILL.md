@@ -12,7 +12,7 @@ Use this skill to install and operate wsinsight-train (command: wsitrain), a hea
 ## Quick install
 
 ```bash
-bash conda-setup.sh -n wsitrain -r
+bash conda-setup.sh wsitrain -r
 conda activate wsitrain
 export CELLVIT_ROOT=/path/to/CellViT-plus-plus
 ```

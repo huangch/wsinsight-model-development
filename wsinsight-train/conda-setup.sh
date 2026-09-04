@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
 # conda-setup.sh — create and populate the wsinsight-train conda environment.
 #
-# Usage:  bash ./conda-setup.sh [-n ENV_NAME] [-r|--reset]
+# <<<USAGE_START>>>
+# Usage:  bash ./conda-setup.sh ENV_NAME [-r|--reset] [-m|--mcp] [-d|--dev] [-h|--help]
 #
-#   -n | --name  ENV_NAME   Conda environment to use (default: current active env).
-#   -r | --reset            Deactivate, remove, recreate, and activate the env.
+#   ENV_NAME                (positional, REQUIRED) Conda environment to use/create.
+#                           There is NO fallback to the currently-activated conda env:
+#                           the name is mandatory so `-r` can never accidentally
+#                           destroy a different active environment.
+#   -r | --reset            Deactivate, remove, recreate, and activate ENV_NAME.
 #                           Without this flag the script only (re-)installs
 #                           packages into the existing env.
+#   -m | --mcp              Also install fastmcp, which backs the
+#                           `wsinsight-train-mcp` console script. Not installed
+#                           by default to keep the env lean.
+#   -d | --dev              Also install the dev tools (pytest, pytest-cov, ruff,
+#                           pre_commit) so the post-install smoke test can run the
+#                           real test suite. Without -d the suite is SKIPped if
+#                           pytest is missing; with -d it FAILS (you asked for it).
+#                           The package itself is always installed editable (-e).
+#   -h | --help             Print this help message and exit.
+# <<<USAGE_END>>>
 #
 # Installs: torch + cellpose + kurtorank + wsitrain (+ optional stardist).
 # kurtorank is installed editable from the sibling repo (not on PyPI).
@@ -15,20 +29,41 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd 2>/dev/null || true)"
 
-ENV_NAME="${CONDA_DEFAULT_ENV:-}"
 DO_RESET=0
+DO_MCP=0
+DO_DEV=0
+
+print_usage() {
+    awk '
+        /<<<USAGE_START>>>/ {capture=1; next}
+        /<<<USAGE_END>>>/   {capture=0}
+        capture            {sub(/^# ?/, ""); print}
+    ' "$0"
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -n|--name) ENV_NAME="${2:?-n requires a name}"; shift 2 ;;
+        -h|--help) print_usage; exit 0 ;;
         -r|--reset) DO_RESET=1; shift ;;
-        *) echo "Usage: bash ./conda-setup.sh [-n ENV_NAME] [-r|--reset]" >&2; exit 1 ;;
+        -m|--mcp) DO_MCP=1; shift ;;
+        -d|--dev) DO_DEV=1; shift ;;
+        -*) echo "Unknown option: $1" >&2; echo "Run '${0##*/} --help' for usage." >&2; exit 1 ;;
+        *)
+            if [[ -n "${ENV_NAME:-}" ]]; then
+                echo "Error: only one positional argument (ENV_NAME) is accepted; got '$ENV_NAME' and '$1'." >&2
+                echo "Run '${0##*/} --help' for usage." >&2
+                exit 1
+            fi
+            ENV_NAME="$1"; shift ;;
     esac
 done
 
-if [[ -z "$ENV_NAME" ]]; then
-    echo "Error: no env specified and none active. Use -n ENV_NAME." >&2; exit 1
+if [[ -z "${ENV_NAME:-}" ]]; then
+    echo "Error: ENV_NAME is required." >&2
+    echo "       Run '${0##*/} --help' for usage." >&2
+    exit 1
 fi
-echo "Target conda environment: ${ENV_NAME}  (reset=${DO_RESET})"
+echo "Target conda environment: ${ENV_NAME}  (reset=${DO_RESET}, mcp=${DO_MCP}, dev=${DO_DEV})"
 
 CONDA_BASE="$(conda info --base 2>/dev/null || true)"
 if [[ -z "${CONDA_BASE}" ]]; then
@@ -84,9 +119,20 @@ pip install -c "${CONSTRAINTS}" "numpy<2" stardist tensorflow \
 #
 # Add --stardist-model NAME if the folder is not named 2D_versatile_he.
 
-# Runtime + test deps not covered by the heavy stack above.
+# Runtime deps not covered by the heavy stack above.
 # zarr is what keeps the tile stage from loading whole slides into RAM.
-pip install -c "${CONSTRAINTS}" pyarrow pytest zarr pyyaml tifffile pillow tqdm
+pip install -c "${CONSTRAINTS}" pyarrow zarr pyyaml tifffile pillow tqdm
+
+# Dev tools are installed directly, not via a [dev] extra: the editable install
+# below uses --no-deps, which would drop extras too.
+if [[ "${DO_DEV}" -eq 1 ]]; then
+    pip install -c "${CONSTRAINTS}" pytest pytest-cov ruff pre_commit
+fi
+
+# Same reasoning for the [mcp] extra.
+if [[ "${DO_MCP}" -eq 1 ]]; then
+    pip install -c "${CONSTRAINTS}" fastmcp
+fi
 
 # kurtorank (editable, not on PyPI).
 if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
@@ -135,6 +181,15 @@ smoke "kurtorank on PATH"    command -v kurtorank
 smoke "kurtorank --help"     kurtorank --help
 smoke "import torch"         python -c 'import torch'
 smoke "numpy < 2"            python -c 'import numpy, sys; sys.exit(int(numpy.__version__.split(".")[0]) >= 2)'
+if [[ "${DO_MCP}" -eq 1 ]]; then
+    smoke "wsinsight-train-mcp on PATH" command -v wsinsight-train-mcp
+    smoke "wsinsight-train-mcp --help"  wsinsight-train-mcp --help
+    # kurtorank is installed into this env too, so its server shares the fastmcp.
+    if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
+        smoke "kurtorank-mcp on PATH"   command -v kurtorank-mcp
+        smoke "kurtorank-mcp --help"    kurtorank-mcp --help
+    fi
+fi
 # StarDist is the default --segmenter but its install is tolerated-failure, so
 # this warns rather than failing setup; cellpose is the documented fallback.
 python -c 'import stardist' >/dev/null 2>&1 \
@@ -159,8 +214,11 @@ if [[ -d "${SCRIPT_DIR}/tests" ]]; then
         python -m pytest "${SCRIPT_DIR}/tests" -q \
             && echo "  PASS  test suite" \
             || echo "  WARN  test suite did not pass (non-fatal)"
+    elif [[ "${DO_DEV}" -eq 1 ]]; then
+        echo "  FAIL  test suite: pytest missing but -d/--dev was requested" >&2
+        smoke "pytest importable (dev)" python -c "import pytest"
     else
-        echo "  SKIP  test suite (pytest not installed; pip install -e '.[dev]')"
+        echo "  SKIP  test suite (pytest not installed; rerun with -d/--dev)"
     fi
 fi
 

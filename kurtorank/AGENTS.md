@@ -9,7 +9,7 @@ sample into a per-cluster cell-type assignment CSV. Python >=3.11, v3.1.0.
 - Co-installable with the shared `wsinsight` conda env; that is the intended
   setup. In a shared env install with `pip install --no-deps -e .` so pip
   cannot move the locked `numpy<2` / `zarr<3` / `anndata<0.13` generation.
-- Standalone: `bash ./conda-setup.sh -n kurtorank [-r|--reset] [-c|--census]`.
+- Standalone: `bash ./conda-setup.sh kurtorank [-r|--reset] [-c|--census] [-d|--dev]`. ENV_NAME is a required positional; run `./conda-setup.sh --help` for the full CLI.
 - **`cellxgene-census` + `tiledbsoma` are optional and their install is allowed
   to fail.** Only `rank-markers` and the `marker-*` paths touch Census, and
   every import site is lazy. `conda-setup.sh` gates them behind `-c/--census`

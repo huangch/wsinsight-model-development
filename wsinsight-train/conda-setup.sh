@@ -20,14 +20,19 @@
 #                           pytest is missing; with -d it FAILS (you asked for it).
 #                           The package itself is always installed editable (-e).
 #   -h | --help             Print this help message and exit.
+#
+# Environment:
+#   KURTORANK_PATH          Path to a kurtorank checkout. Only consulted when
+#                           kurtorank is not already installed in ENV_NAME.
+#                           Falls back to the sibling ../kurtorank.
 # <<<USAGE_END>>>
 #
 # Installs: torch + cellpose + kurtorank + wsitrain (+ optional stardist).
-# kurtorank is installed editable from the sibling repo (not on PyPI).
+# kurtorank is installed editable from a checkout (not on PyPI) unless the
+# target env already provides it.
 # See the StarDist block below for pointing wsitrain at a pre-downloaded model.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd 2>/dev/null || true)"
 
 DO_RESET=0
 DO_MCP=0
@@ -89,6 +94,30 @@ fi
 conda activate "${ENV_NAME}"
 pip install --upgrade pip
 
+# Resolved here, after activation, so the "already installed" probe sees the
+# target env -- and before the multi-GB installs, so a missing kurtorank fails
+# now rather than at the smoke test. wsitrain shells out to the console script
+# (wsitrain/cli.py), so that, not an importable module, is the thing to find.
+if command -v kurtorank >/dev/null 2>&1; then
+    KURTORANK_DIR=""
+    echo "kurtorank: already installed in ${ENV_NAME}; leaving it alone."
+elif [[ -n "${KURTORANK_PATH:-}" && -f "${KURTORANK_PATH}/pyproject.toml" ]]; then
+    KURTORANK_DIR="$(cd "${KURTORANK_PATH}" && pwd)"
+    echo "kurtorank: installing editable from KURTORANK_PATH=${KURTORANK_DIR}"
+elif [[ -f "${SCRIPT_DIR}/../kurtorank/pyproject.toml" ]]; then
+    KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd)"
+    echo "kurtorank: installing editable from sibling ${KURTORANK_DIR}"
+else
+    echo "Error: kurtorank is not installed in '${ENV_NAME}' and no checkout was found." >&2
+    echo "       wsitrain shells out to the kurtorank console script, which is not on PyPI." >&2
+    if [[ -n "${KURTORANK_PATH:-}" ]]; then
+        echo "       KURTORANK_PATH=${KURTORANK_PATH} has no pyproject.toml." >&2
+    fi
+    echo "       Clone it beside this repo (${SCRIPT_DIR}/../kurtorank), or set:" >&2
+    echo "           KURTORANK_PATH=/path/to/kurtorank ${0##*/} ${ENV_NAME}" >&2
+    exit 1
+fi
+
 # Redirect pip cache off NAS to dodge inode quotas (seen on this cluster).
 # Exported before any purge: `pip cache purge` obeys this variable, so purging
 # first wiped the user's global ~/.cache/pip. Shared dir so the sibling repos
@@ -134,11 +163,11 @@ if [[ "${DO_MCP}" -eq 1 ]]; then
     pip install -c "${CONSTRAINTS}" fastmcp
 fi
 
-# kurtorank (editable, not on PyPI).
-if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
-    # Its deps are installed explicitly because the editable install below uses
-    # --no-deps: letting pip resolve them relaxes the numpy<2 / zarr<3 generation
-    # that stardist and the shared wsinsight env depend on.
+# kurtorank (editable, not on PyPI); skipped when the env already provides it.
+# Its deps are installed explicitly because the editable install below uses
+# --no-deps: letting pip resolve them relaxes the numpy<2 / zarr<3 generation
+# that stardist and the shared wsinsight env depend on.
+if [[ -n "${KURTORANK_DIR}" ]]; then
     pip install -c "${CONSTRAINTS}" \
         anndata scanpy squidpy spatialdata spatialdata-io \
         xarray dask distributed pandas scipy statsmodels matplotlib seaborn click
@@ -147,8 +176,6 @@ if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
     pip install -c "${CONSTRAINTS}" cellxgene-census tiledbsoma \
         || echo "WARNING: cellxgene-census/tiledbsoma failed; kurtorank marker-*/rank unavailable"
     pip install --no-deps -e "${KURTORANK_DIR}"
-else
-    echo "WARNING: kurtorank repo not found at ${SCRIPT_DIR}/../kurtorank; install it manually."
 fi
 
 # wsitrain itself (deps above already satisfied).
@@ -185,10 +212,8 @@ if [[ "${DO_MCP}" -eq 1 ]]; then
     smoke "wsinsight-train-mcp on PATH" command -v wsinsight-train-mcp
     smoke "wsinsight-train-mcp --help"  wsinsight-train-mcp --help
     # kurtorank is installed into this env too, so its server shares the fastmcp.
-    if [[ -n "${KURTORANK_DIR}" && -f "${KURTORANK_DIR}/pyproject.toml" ]]; then
-        smoke "kurtorank-mcp on PATH"   command -v kurtorank-mcp
-        smoke "kurtorank-mcp --help"    kurtorank-mcp --help
-    fi
+    smoke "kurtorank-mcp on PATH"   command -v kurtorank-mcp
+    smoke "kurtorank-mcp --help"    kurtorank-mcp --help
 fi
 # StarDist is the default --segmenter but its install is tolerated-failure, so
 # this warns rather than failing setup; cellpose is the documented fallback.

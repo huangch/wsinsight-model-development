@@ -68,7 +68,7 @@ census = [
 # the sibling `wsinsight[mcp]` / `hplot[mcp]` / `sptxinsight[mcp]` /
 # `wsinsight-train[mcp]` extras so every package in the workspace can be
 # driven from an LLM agent via the same Model Context Protocol.
-mcp = ["fastmcp>=2.0"]
+mcp = ["fastmcp>=4.0,<5"]
 dev = [
   "pytest",
   "pytest-cov",

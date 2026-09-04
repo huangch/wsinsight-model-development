@@ -70,7 +70,35 @@ def cli() -> None:
 # Register subcommands.
 cli.add_command(annotate_cmd, name="annotate")
 cli.add_command(rank_markers_cmd)
+
+@click.command(name="schema")
+@click.option("--output", "output_path", type=click.Path(dir_okay=False, writable=True),
+              default=None, help="Write the schema JSON to this file instead of stdout.")
+def schema_cmd(output_path: str | None) -> None:
+    """Emit a machine-readable JSON schema of every kurtorank subcommand."""
+    import json
+
+    from kurtorank.mcp.schema import discover_commands, get_command
+
+    commands = {}
+    for name in discover_commands():
+        cmd = cli.commands.get(name) or cli.commands.get(name.replace("_", "-"))
+        commands[name] = {
+            "name": name,
+            "help": ((cmd.help or cmd.short_help or "") if cmd else "").strip(),
+            "params": get_command(name),
+        }
+    payload = json.dumps({"schema_version": 1, "commands": commands},
+                         indent=2, sort_keys=True, default=str)
+    if output_path:
+        with open(output_path, "w", encoding="utf-8") as fh:
+            fh.write(payload + "\n")
+    else:
+        click.echo(payload)
+
+
 cli.add_command(build_panel_cmd)
+cli.add_command(schema_cmd)
 
 
 def _main() -> None:

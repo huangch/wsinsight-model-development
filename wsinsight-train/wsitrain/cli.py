@@ -357,6 +357,29 @@ def _cmd_run(args) -> int:
                    skip=_stages(getattr(args, "run_skip", None)), force=args.force)
 
 
+
+def _cmd_schema(args) -> int:
+    import json
+
+    from wsitrain.mcp.schema import discover_commands, get_command
+
+    commands = {}
+    for name in discover_commands():
+        commands[name] = {
+            "name": name,
+            "help": _STAGE_HELP.get(name, ""),
+            "params": get_command(name),
+        }
+    payload = json.dumps({"schema_version": 1, "commands": commands},
+                         indent=2, sort_keys=True, default=str)
+    if getattr(args, "output_path", None):
+        with open(args.output_path, "w", encoding="utf-8") as fh:
+            fh.write(payload + "\n")
+    else:
+        print(payload)
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser("wsitrain", description="Train WSInsight CellViT heads end-to-end.")
     p.add_argument("--version", action="version", version=f"wsitrain {__version__}")
@@ -389,6 +412,13 @@ def main(argv=None) -> int:
                      "this one depends on must already be done.")
         # A stage command is `run` narrowed to one stage.
         sp.set_defaults(fn=_cmd_run, only=stage)
+
+    sc = sub.add_parser(
+        "schema",
+        help="Emit a machine-readable JSON schema of every wsitrain subcommand.")
+    sc.add_argument("--output", dest="output_path", default=None,
+                    help="Write the schema JSON to this file instead of stdout.")
+    sc.set_defaults(fn=_cmd_schema)
 
     args = p.parse_args(argv)
     return args.fn(args)

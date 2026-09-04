@@ -22,9 +22,9 @@
 #   -h | --help             Print this help message and exit.
 #
 # Environment:
-#   KURTORANK_PATH          Path to a kurtorank checkout. Only consulted when
-#                           kurtorank is not already installed in ENV_NAME.
-#                           Falls back to the sibling ../kurtorank.
+#   KURTORANK_PATH          Path to a kurtorank checkout. Consulted only when
+#                           kurtorank is not already installed in ENV_NAME and
+#                           the sibling ../kurtorank is absent.
 # <<<USAGE_END>>>
 #
 # Installs: torch + cellpose + kurtorank + wsitrain (+ optional stardist).
@@ -101,12 +101,12 @@ pip install --upgrade pip
 if command -v kurtorank >/dev/null 2>&1; then
     KURTORANK_DIR=""
     echo "kurtorank: already installed in ${ENV_NAME}; leaving it alone."
-elif [[ -n "${KURTORANK_PATH:-}" && -f "${KURTORANK_PATH}/pyproject.toml" ]]; then
-    KURTORANK_DIR="$(cd "${KURTORANK_PATH}" && pwd)"
-    echo "kurtorank: installing editable from KURTORANK_PATH=${KURTORANK_DIR}"
 elif [[ -f "${SCRIPT_DIR}/../kurtorank/pyproject.toml" ]]; then
     KURTORANK_DIR="$(cd "${SCRIPT_DIR}/../kurtorank" && pwd)"
     echo "kurtorank: installing editable from sibling ${KURTORANK_DIR}"
+elif [[ -n "${KURTORANK_PATH:-}" && -f "${KURTORANK_PATH}/pyproject.toml" ]]; then
+    KURTORANK_DIR="$(cd "${KURTORANK_PATH}" && pwd)"
+    echo "kurtorank: installing editable from KURTORANK_PATH=${KURTORANK_DIR}"
 else
     echo "Error: kurtorank is not installed in '${ENV_NAME}' and no checkout was found." >&2
     echo "       wsitrain shells out to the kurtorank console script, which is not on PyPI." >&2

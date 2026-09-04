@@ -144,8 +144,10 @@ import wsitrain
 print("wsitrain: ok")
 import kurtorank
 print("kurtorank: ok")
+import importlib.metadata as md
 import cellpose
-print("cellpose:", cellpose.__version__)
+# cellpose 4.x dropped the module-level __version__; read the dist metadata.
+print("cellpose:", md.version("cellpose"))
 PY
 
 # ENTRYPOINT below is the `wsitrain` console script, so its absence would only

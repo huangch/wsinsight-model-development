@@ -147,10 +147,13 @@ class StarDistSegmenter:
     big_min_overlap = 128
 
     def __init__(self, model: str = "2D_versatile_he", native_mpp: float | None = None,
-                 model_dir=None, cpu: bool = False):
+                 model_dir=None, cpu: bool = False,
+                 norm_pmin: float = 3.0, norm_pmax: float = 99.8):
         self.model_name = model
         self.model_dir = model_dir
         self.cpu = cpu
+        self.norm_pmin = norm_pmin
+        self.norm_pmax = norm_pmax
         if native_mpp:
             self.native_mpp = float(native_mpp)
         self._model = None  # lazy: loaded once, reused across slides
@@ -183,7 +186,7 @@ class StarDistSegmenter:
             self._model = self._load()
         scale = float(mpp) / self.native_mpp
         img = _resample_rgb(he_rgb, scale)
-        norm = normalize(img)
+        norm = normalize(img, self.norm_pmin, self.norm_pmax)
         h, w = norm.shape[:2]
         try:
             if max(h, w) > self.big_px:
@@ -215,7 +218,9 @@ def get_segmenter(name: str, *, cellpose_model: str = "cpsam",
                   model_type: str | None = None,
                   stardist_model: str = "2D_versatile_he",
                   stardist_model_dir=None,
-                  stardist_cpu: bool = False) -> Segmenter:
+                  stardist_cpu: bool = False,
+                  stardist_norm_pmin: float = 3.0,
+                  stardist_norm_pmax: float = 99.8) -> Segmenter:
     if name == "cellpose":
         return CellposeSegmenter(
             model_type or cellpose_model,
@@ -226,5 +231,7 @@ def get_segmenter(name: str, *, cellpose_model: str = "cpsam",
         )
     if name == "stardist":
         return StarDistSegmenter(stardist_model, model_dir=stardist_model_dir,
-                                 cpu=stardist_cpu)
+                                 cpu=stardist_cpu,
+                                 norm_pmin=stardist_norm_pmin,
+                                 norm_pmax=stardist_norm_pmax)
     raise ValueError(f"unknown segmenter: {name!r} (cellpose | stardist)")

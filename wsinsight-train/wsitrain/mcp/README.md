@@ -70,14 +70,14 @@ wsitrain/mcp/
 ├── __init__.py     # public surface (build_server, build_server aliases)
 ├── __main__.py     # wsinsight-train-mcp console-script entry point
 ├── server.py       # FastMCP tool registration + per-tool argv builder
-├── schema.py       # hand-authored CLI schema (mirrors wsitrain/cli.py)
+├── schema.py       # CLI schema, reflected from wsitrain/cli.py's argparse
 ├── adapters.py     # snake_case → kebab-case → argv translator
 ├── jobs.py         # background Job + JobManager (stdlib + threading)
 └── README.md       # this file
 ```
 
-The schema in [`schema.py`](./wsitrain/mcp/schema.py) is hand-authored
-because `wsitrain` uses `argparse`, not the Click-based schema generator
-that `wsinsight/mcp/` relies on. Each schema entry mirrors an argparse
-``add_argument`` call in `wsitrain/cli.py` — if you add a flag to the
-CLI, add the matching entry here too.
+The schema in [`schema.py`](./wsitrain/mcp/schema.py) is built from
+`wsitrain.cli.parser_for()`, the same parser the CLI runs, so a new flag shows
+up as a tool argument with no second edit. It used to be hand-written and had
+drifted to naming flags argparse rejects while omitting the required
+`--tissue`; `tests/test_mcp_schema_parity.py` now fails if the two diverge.

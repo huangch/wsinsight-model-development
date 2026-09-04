@@ -52,8 +52,13 @@ wsitrain --version
 ```
 
 Training scope via `--tissue`: one (`breast`), subset (`breast,lung`), or all
-(`pantissue`). Stages: `annotate → segment → transfer → tile → split → train →
-validate → export → report`, and each is also a command of its own.
+(`pantissue`). Stages: `annotate → segment → transfer → tile | crop → split →
+train → validate → export → report`, and each is also a command of its own.
+
+`tile` and `crop` are alternatives, picked by `--object-detection`: `end2end`
+(the default) cuts tiles for CellViT, `stardist` cuts one crop per cell for a
+torchvision classifier that an external detector feeds at inference. The
+stage that does not apply reports itself skipped.
 
 Run the lot with `wsitrain run` (drop stages with `--run-skip a b`), or drive the
 pipeline one command at a time. A stage command refuses to start unless the
@@ -64,6 +69,27 @@ the flags its own stage reads; anything else it needs is carried over from the
 config the previous command wrote into `--output`. Completed stages are skipped
 on re-run (`--force` overrides, and also discards the masks segment would
 otherwise reuse).
+
+### Training a non-end-to-end cell classifier
+
+```bash
+wsitrain run --input DIR --tissue breast \
+  --object-detection stardist --architecture resnet50 \
+  --patch-size-pixels 56 --patch-spacing-um-px 0.274 \
+  --stain-normalization --epochs 50 --batch-size 128 --lr 1e-4
+```
+
+`--architecture` is any name `torchvision.models.get_model` accepts. The four
+geometry settings have no defaults: they decide what the deployed model expects,
+and a wrong guess trains a model that scores well here and misclassifies under
+wsinsight. `--stain-normalization` Macenko-normalises each crop through the same
+HistomicsTK call wsinsight uses at inference, estimating one matrix per slide
+from `--norm-sample-size` cells.
+
+`export` writes `object_detection: {name: stardist, ...}` into the model config,
+which is what makes wsinsight detect cells first and hand this model only the
+crops. The percentiles it records are the ones `segment` ran with, so detection
+matches between training and inference.
 
 ### Where a setting's value comes from
 
@@ -118,11 +144,19 @@ Caches default to `/workspace/.cellpose` + `/workspace/.torch`; tmp to `/tmp`.
 models/<tissue>/main/   config.json + torchscript_model.pt + label_map.yaml  (wsinsight-ready)
 report/<tissue>/        confusion_matrix.png, scores.json, summary.txt, tuning_log.jsonl
 trainingset/<tissue>/   tiles, label_map.yaml, splits/, train_configs/
+cells/<tissue>/         one HDF5 per slide (--object-detection stardist)
 logs/<tissue>/          CellViT run dirs (checkpoints + val_results)
 masks/, nuclei/         intermediates
 run-<tissue>.yaml       resolved config, inherited by the next command
 manifest-<tissue>.json  per-stage status
 ```
+
+Each `cells/<tissue>/<sample>.h5` holds `images` (what the model trains on),
+`images_raw` (the same crops before stain normalisation), `labels`, and the
+source `x_px`/`y_px`. The Macenko matrices are stored as attributes, so a crop
+can be traced back to how it was normalised. Reading a slide again costs about
+5 ms per cell against 1 ms to re-normalise, which is why the raw pixels are
+kept.
 
 ## Pan-cancer vs subset
 

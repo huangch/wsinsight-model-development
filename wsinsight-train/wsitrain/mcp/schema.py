@@ -1,107 +1,70 @@
-"""Hand-authored CLI schema for the ``wsitrain`` subcommands.
+"""CLI schema for the ``wsitrain`` subcommands, reflected from argparse.
 
-The sibling ``wsinsight`` MCP server reflects its Click-based CLI via
-``wsinsight.cli.cli_schema.json``. ``wsitrain`` uses argparse, so the
-schema is hand-written here. Each entry below mirrors the argparse
-definitions in :file:`wsitrain/cli.py` so the MCP tool input schema
-matches the CLI ``--help`` output.
-
-Updating: when you add a new flag to ``wsitrain.cli._add_common`` or to
-a stage's ``_STAGE_FLAGS``, update the matching schema below. There is a
-small post-commit reminder that grep's for the schema keys against the
-CLI's ``--help`` text — keep this file in sync to avoid drift.
+The sibling ``wsinsight`` MCP server reflects its Click CLI through a generated
+``cli_schema.json``. This table used to be hand-written and had drifted badly:
+it named thirteen flags the CLI rejects (``max_epochs``, ``learning_rate``,
+``fractions``, ...), omitted the required ``--tissue`` everywhere, and never
+gained the stages added after it. Building it from the same parser the CLI runs
+keeps the two in step by construction.
 """
 
 from __future__ import annotations
 
-# Mirrors ``wsitrain.SUB`` argparse subparsers (see cli.py).
+import argparse
+
+from .. import STAGES
+from ..cli import parser_for
+
+# Config plumbing an agent has no use for; --input/--tissue/--output stay.
+_HIDDEN = {"help", "config", "reset_config", "show_config"}
+
+
+def _kind(action: argparse.Action) -> str:
+    if isinstance(action, (argparse._StoreTrueAction, argparse._StoreFalseAction)):
+        return "bool_flag"
+    if action.dest in ("input", "output"):
+        return "path"
+    if action.type is int:
+        return "int"
+    if action.type is float:
+        return "float"
+    return "string"
+
+
+def _entries(command: str) -> list[dict]:
+    by_dest: dict[str, dict] = {}
+    for action in parser_for(command)._actions:
+        if action.dest in _HIDDEN or not action.option_strings:
+            continue
+        primary = max(action.option_strings, key=len)
+        if isinstance(action, argparse._StoreFalseAction) and action.dest in by_dest:
+            # `--no-x` shares its dest with `--x`. A flag whose default is unset
+            # cannot express "off" by omission, so the adapter needs the spelling.
+            by_dest[action.dest]["off_flag"] = primary
+            continue
+        entry: dict = {
+            "name": action.dest,
+            "kind": _kind(action),
+            "required": bool(action.required),
+            "help": action.help or "",
+        }
+        if action.nargs in ("+", "*"):
+            entry["nargs"] = "+"
+        if action.default is not None and action.default != []:
+            entry["default"] = action.default
+        if action.choices:
+            entry["choices"] = list(action.choices)
+        by_dest[action.dest] = entry
+    return list(by_dest.values())
+
+
 COMMANDS: dict[str, list[dict]] = {
-    "check": [
-        {"name": "input", "kind": "string", "required": True,
-         "help": "Path to a YAML config (see scripts/ for examples)."},
-        {"name": "labels", "kind": "string", "nargs": "+", "required": False,
-         "help": "Labelspace filter."},
-        {"name": "gpus", "kind": "string", "required": False,
-         "help": "Comma-separated GPU ids, e.g. '0,1'."},
-        {"name": "output", "kind": "path", "required": False,
-         "help": "Directory to write preflight report."},
-    ],
-    "run": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "labels", "kind": "string", "nargs": "+", "required": False},
-        {"name": "stages", "kind": "string", "nargs": "+", "required": False,
-         "help": "Stage names to run (default: all)."},
-        {"name": "run_skip", "kind": "string", "nargs": "+", "required": False,
-         "help": "Stages to skip."},
-        {"name": "gpus", "kind": "string", "required": False},
-        {"name": "num_workers", "kind": "int", "required": False},
-        {"name": "pin_memory", "kind": "bool_flag", "default": False,
-         "help": "Use pin_memory in DataLoader."},
-        {"name": "dry_run", "kind": "bool_flag", "default": False},
-    ],
-    "annotate": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-    ],
-    "segment": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "mpp", "kind": "string", "default": "0.5"},
-        {"name": "thumbsize", "kind": "int", "default": 2048},
-    ],
-    "transfer": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "model_id", "kind": "string", "default": "cellvit"},
-    ],
-    "tile": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "tile_px", "kind": "string", "default": "1024"},
-        {"name": "halo_px", "kind": "string", "default": "0"},
-        {"name": "mpp", "kind": "string", "default": "0.5"},
-    ],
-    "split": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "fractions", "kind": "string", "default": "0.7,0.15,0.15"},
-        {"name": "seed", "kind": "int", "default": 42},
-    ],
-    "train": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "gpus", "kind": "string", "required": False},
-        {"name": "num_workers", "kind": "int", "default": 4},
-        {"name": "max_epochs", "kind": "int", "default": 50},
-        {"name": "learning_rate", "kind": "string", "default": "1e-4"},
-    ],
-    "validate": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "gpus", "kind": "string", "required": False},
-    ],
-    "export": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "format", "kind": "string", "default": "torchscript",
-         "help": "torchscript|onnx"},
-    ],
-    "report": [
-        {"name": "input", "kind": "string", "required": True},
-        {"name": "output", "kind": "path", "required": True},
-        {"name": "format", "kind": "string", "default": "html",
-         "help": "html|markdown|json"},
-    ],
+    name: _entries(name) for name in ("check", "run", *STAGES)
 }
 
 
-# Mark which commands are long-running (return job_id).
-LONG_RUNNING: frozenset[str] = frozenset({
-    "run",
-    "annotate", "segment", "transfer", "tile",
-    "split", "train", "validate", "export", "report",
-})
+# `check` only inspects the cohort; everything else can run for hours.
+LONG_RUNNING: frozenset[str] = frozenset(set(COMMANDS) - {"check"})
 
 
 def is_long_running(command: str) -> bool:

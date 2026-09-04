@@ -1,8 +1,8 @@
 """WSInsight-Train MCP (Model Context Protocol) server.
 
-Exposes the ``wsitrain`` CLI subcommands (``check``, ``run``, and the nine
-stages: ``annotate``, ``segment``, ``transfer``, ``tile``, ``split``,
-``train``, ``validate``, ``export``, ``report``) as MCP tools so AI
+Exposes the ``wsitrain`` CLI subcommands (``check``, ``run``, and the ten
+stages: ``annotate``, ``segment``, ``transfer``, ``tile``, ``crop``,
+``split``, ``train``, ``validate``, ``export``, ``report``) as MCP tools so AI
 agents (Claude Desktop, VS Code Copilot, Cursor) can drive training
 pipelines through the same surface as human users.
 

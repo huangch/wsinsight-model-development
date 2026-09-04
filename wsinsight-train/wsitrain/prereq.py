@@ -12,11 +12,19 @@ from . import paths
 PREREQUISITES: dict[str, tuple[str, ...]] = {
     "transfer": ("annotate", "segment"),
     "tile": ("transfer",),
+    "crop": ("transfer",),
     "split": ("tile",),
     "train": ("split",),
     "validate": ("train",),
     "export": ("train",),
 }
+
+
+def _prerequisites(stage: str, cfg) -> tuple[str, ...]:
+    """Only one cutting stage runs; the other is marked done with no output."""
+    if stage == "split" and getattr(cfg, "object_detection", "end2end") != "end2end":
+        return ("crop",)
+    return PREREQUISITES.get(stage, ())
 
 # Stage -> the artifact its successors read. A done-mark alone is not enough:
 # the output dir may have been cleaned by hand since. `annotate` writes into the
@@ -26,6 +34,7 @@ _ARTIFACTS: dict[str, Callable[[Path, str], Path]] = {
     "segment": paths.masks_dir,
     "transfer": paths.nuclei_dir,
     "tile": paths.labels_dir,
+    "crop": paths.cells_dir,
     # configrender points CELLVIT_LOGS at this, so a trained run does land
     # under --output even though CellViT itself lives elsewhere.
     "train": paths.logs_dir,
@@ -38,7 +47,7 @@ def _is_empty(path: Path) -> bool:
 
 def check(stage: str, mf, cfg) -> None:
     """Raise SystemExit unless every stage `stage` depends on has really run."""
-    for prev in PREREQUISITES.get(stage, ()):
+    for prev in _prerequisites(stage, cfg):
         if not mf.is_done(prev):
             raise SystemExit(
                 f"[{stage}] needs the {prev} stage, which has not run in "

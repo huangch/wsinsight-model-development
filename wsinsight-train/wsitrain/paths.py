@@ -37,6 +37,11 @@ def nuclei_dir(out: Path, tissue: str) -> Path:
     return out / "nuclei" / _slug(tissue)
 
 
+def cells_dir(out: Path, tissue: str) -> Path:
+    """Per-slide HDF5 crops for the non-end-to-end classifier."""
+    return out / "cells" / _slug(tissue)
+
+
 def train_config_path(out: Path, tissue: str, backbone: str, fold: str) -> Path:
     return tissue_root(out, tissue) / "train_configs" / backbone / f"{fold}.yaml"
 

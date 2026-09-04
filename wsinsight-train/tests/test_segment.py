@@ -440,7 +440,7 @@ def _install_fake_stardist(monkeypatch, model_cls):
     monkeypatch.setitem(sys.modules, "stardist.models", sd_models)
     csb = types.ModuleType("csbdeep")
     csb_utils = types.ModuleType("csbdeep.utils")
-    csb_utils.normalize = lambda x: x
+    csb_utils.normalize = lambda x, pmin=3, pmax=99.8: x
     monkeypatch.setitem(sys.modules, "csbdeep", csb)
     monkeypatch.setitem(sys.modules, "csbdeep.utils", csb_utils)
 

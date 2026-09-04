@@ -253,6 +253,8 @@ def _segment_recipe(cfg) -> dict[str, Any]:
     else:
         recipe.update(
             stardist_model=cfg.stardist_model,
+            stardist_normalization_pmin=cfg.stardist_normalization_pmin,
+            stardist_normalization_pmax=cfg.stardist_normalization_pmax,
             stardist_model_dir=(str(cfg.stardist_model_dir)
                                 if cfg.stardist_model_dir else None))
     return recipe
@@ -300,7 +302,9 @@ def segment(cfg, samples, out: Path) -> dict[str, Any]:
                         gpu=gpu_mode,
                         stardist_model=cfg.stardist_model,
                         stardist_model_dir=cfg.stardist_model_dir,
-                        stardist_cpu=cfg.stardist_cpu)
+                        stardist_cpu=cfg.stardist_cpu,
+                        stardist_norm_pmin=cfg.stardist_normalization_pmin,
+                        stardist_norm_pmax=cfg.stardist_normalization_pmax)
     mask_dir = paths.masks_dir(out, cfg.tissue)
     mask_dir.mkdir(parents=True, exist_ok=True)
     # The mask filename carries no segmenter, so without this a cellpose run
@@ -555,6 +559,9 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     import pandas as pd
     from PIL import Image
 
+    if _is_cellcls(cfg):
+        return {"skipped": "non-end2end model; cells are cut by the crop stage"}
+
     nuc_dir = paths.nuclei_dir(out, cfg.tissue)
     img_dir = paths.images_dir(out, cfg.tissue)
     lab_dir = paths.labels_dir(out, cfg.tissue)
@@ -590,7 +597,216 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
 
 
 
+def _is_cellcls(cfg) -> bool:
+    """True when an external detector supplies the cells and we only classify."""
+    return getattr(cfg, "object_detection", "end2end") != "end2end"
+
+
+def crop(cfg, samples, out: Path) -> dict[str, Any]:
+    """Emit one HDF5 of centred cell crops per slide (non-end-to-end contract).
+
+    Reads the same nuclei CSVs as `tile`, but cuts a patch_size_pixels window
+    around each cell resampled to patch_spacing_um_px.
+    """
+    import pandas as pd
+    from tqdm import tqdm
+
+    from .. import cellcls
+
+    if not _is_cellcls(cfg):
+        return {"skipped": "end2end model; tiles are cut by the tile stage"}
+
+    nuc_dir = paths.nuclei_dir(out, cfg.tissue)
+    dst_dir = paths.cells_dir(out, cfg.tissue)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    read_px = cellcls.read_px_for(cfg.patch_size_pixels, cfg.patch_spacing_um_px, cfg.mpp)
+    total, files = 0, []
+    for s in tqdm(samples, desc="crop", unit="slide", ascii=" =", dynamic_ncols=True):
+        csv = nuc_dir / f"{s.sample_id}.csv"
+        if not csv.exists():        # dropped by the transfer QC
+            continue
+        cells = pd.read_csv(csv)
+        with SlideReader(s.he) as reader:
+            n = cellcls.crop_cells_to_h5(
+                reader, cells, dst_dir / f"{s.sample_id}.h5",
+                patch_px=cfg.patch_size_pixels, read_px=read_px,
+                sample_id=s.sample_id,
+                patch_spacing_um_px=cfg.patch_spacing_um_px,
+                stain_normalization=bool(cfg.stain_normalization),
+                norm_sample_size=cfg.norm_sample_size, seed=cfg.seed)
+        if n:
+            files.append(s.sample_id)
+        total += n
+    if total == 0:
+        raise RuntimeError(
+            f"crop wrote no cells; check that {nuc_dir} holds transfer output.")
+    return {"cells": total, "slides": len(files), "read_px": read_px}
+
+
+def _split_cells(cfg, out: Path) -> dict[str, Any]:
+    """Whole-slide split: a cell must never appear on both sides."""
+    import random
+
+    files = sorted(paths.cells_dir(out, cfg.tissue).glob("*.h5"))
+    if len(files) < 2:
+        raise RuntimeError(
+            f"need at least 2 slides to split, found {len(files)} in "
+            f"{paths.cells_dir(out, cfg.tissue)}")
+    order = list(files)
+    random.Random(cfg.seed).shuffle(order)
+    n_val = max(int(round(len(order) * cfg.val_frac)), 1)
+    val, train = order[:n_val], order[n_val:]
+    if not train:
+        raise RuntimeError("val_frac left no training slides")
+    d = paths.splits_dir(out, cfg.tissue, cfg.fold)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "train.txt").write_text("\n".join(str(p) for p in train) + "\n")
+    (d / "val.txt").write_text("\n".join(str(p) for p in val) + "\n")
+    return {"mode": "slide", "n_train_slides": len(train), "n_val_slides": len(val)}
+
+
+def _cell_split_files(cfg, out: Path) -> tuple[list[Path], list[Path]]:
+    d = paths.splits_dir(out, cfg.tissue, cfg.fold)
+    def _read(name):
+        p = d / name
+        if not p.exists():
+            raise RuntimeError(f"missing {p}; run the split stage first")
+        return [Path(x) for x in p.read_text().split() if x]
+    return _read("train.txt"), _read("val.txt")
+
+
+def _cellcls_run_dir(cfg, out: Path) -> Path:
+    return paths.logs_dir(out, cfg.tissue) / f"cellcls_{cfg.fold}"
+
+
+def _cellcls_classes(cfg, out: Path) -> list[str]:
+    from ..weights import load_label_map
+
+    label_map = load_label_map(paths.label_map_path(out, cfg.tissue))
+    return [label_map[i] for i in sorted(label_map)]
+
+
+def _train_cells(cfg, out: Path) -> dict[str, Any]:
+    import json
+
+    import numpy as np
+
+    from .. import cellcls
+
+    train_files, val_files = _cell_split_files(cfg, out)
+    class_names = _cellcls_classes(cfg, out)
+    # Statistics come from the training slides only; the validation set would
+    # leak into the exported config's Normalize.
+    mean, std = cellcls.compute_norm_stats(train_files, seed=cfg.seed)
+
+    counts = np.bincount(cellcls.CellH5Dataset(train_files).labels(),
+                         minlength=len(class_names)).astype(float)
+    weights = np.where(counts > 0, counts.sum() / np.maximum(counts, 1), 0.0)
+    weights = np.minimum(weights / max(weights[weights > 0].min(), 1e-9), cfg.weight_cap)
+
+    run_dir = _cellcls_run_dir(cfg, out)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "norm_stats.json").write_text(
+        json.dumps({"mean": mean, "std": std}, indent=2))
+
+    res = cellcls.train_classifier(
+        train_files, val_files, architecture=cfg.architecture,
+        patch_px=cfg.patch_size_pixels, num_classes=len(class_names),
+        mean=mean, std=std, out_dir=run_dir, epochs=cfg.epochs,
+        batch_size=cfg.batch_size, lr=cfg.lr, weight_decay=cfg.weight_decay,
+        num_workers=cfg.num_workers, pretrained=cfg.pretrained,
+        class_weights=weights.tolist())
+    res["run_dir"] = str(run_dir)
+    return res
+
+
+def _validate_cells(cfg, out: Path) -> dict[str, Any]:
+    import json
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import torch
+    from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+    from torch.utils.data import DataLoader
+
+    from .. import cellcls
+
+    _, val_files = _cell_split_files(cfg, out)
+    class_names = _cellcls_classes(cfg, out)
+    run_dir = _cellcls_run_dir(cfg, out)
+    stats = json.loads((run_dir / "norm_stats.json").read_text())
+
+    model, _ = cellcls.load_checkpoint(run_dir / "model_best.pth")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    loader = DataLoader(
+        cellcls.CellH5Dataset(val_files, stats["mean"], stats["std"], train=False),
+        batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers)
+    acc, preds, gts = cellcls.evaluate(model, loader, device)
+
+    rd = paths.report_dir(out, cfg.tissue)
+    rd.mkdir(parents=True, exist_ok=True)
+    metrics = {"val_accuracy": acc, "n_val_cells": int(len(gts))}
+    (rd / "scores.json").write_text(json.dumps(metrics, indent=2))
+
+    cm = confusion_matrix(gts, preds, labels=list(range(len(class_names))))
+    cm_norm = cm.astype(float) / (cm.sum(axis=1, keepdims=True) + 1e-9)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    ConfusionMatrixDisplay(confusion_matrix=cm_norm, display_labels=class_names).plot(
+        ax=ax, colorbar=True, xticks_rotation=45, cmap=CONFUSION_CMAP,
+        values_format=".2f", text_kw={"fontsize": 8})
+    plt.setp(ax.get_xticklabels(), ha="right", rotation_mode="anchor")
+    ax.set_title("Normalised")
+    fig.tight_layout()
+    fig.savefig(rd / "confusion_matrix.png", dpi=600)
+    plt.close(fig)
+    return {"run_dir": str(run_dir), "metrics": metrics}
+
+
+def _export_cells(cfg, out: Path) -> dict[str, Any]:
+    import json
+    import shutil
+
+    from .. import cellcls
+
+    class_names = _cellcls_classes(cfg, out)
+    run_dir = _cellcls_run_dir(cfg, out)
+    stats = json.loads((run_dir / "norm_stats.json").read_text())
+    dst = paths.models_dir(out, cfg.tissue) / "main"
+    dst.mkdir(parents=True, exist_ok=True)
+    cellcls.export_torchscript(run_dir / "model_best.pth",
+                               dst / "torchscript_model.pt", cfg.patch_size_pixels)
+
+    config = {
+        "spec_version": "1.0",
+        "architecture": cfg.architecture,
+        "num_classes": len(class_names),
+        "class_names": class_names,
+        "patch_size_pixels": cfg.patch_size_pixels,
+        "spacing_um_px": cfg.patch_spacing_um_px,
+        "transform": [
+            {"name": "Resize", "arguments": {"size": cfg.patch_size_pixels}},
+            {"name": "ToTensor"},
+            {"name": "Normalize",
+             "arguments": {"mean": stats["mean"], "std": stats["std"]}},
+        ],
+        "stain_normalization": cfg.stain_normalization,
+        "object_based": True,
+        "object_detection": {
+            "name": cfg.object_detection,
+            "normalization_pmin": cfg.stardist_normalization_pmin,
+            "normalization_pmax": cfg.stardist_normalization_pmax,
+        },
+    }
+    (dst / "config.json").write_text(json.dumps(config, indent=2))
+    shutil.copy2(paths.label_map_path(out, cfg.tissue), dst / "label_map.yaml")
+    return {"model_dir": str(dst), "classes": class_names}
+
+
 def split(cfg, samples, out: Path) -> dict[str, Any]:
+    if _is_cellcls(cfg):
+        return _split_cells(cfg, out)
     label_dir = paths.labels_dir(out, cfg.tissue)
     res = splits_mod.split_tiles(label_dir, val_frac=cfg.val_frac,
                                  by_slide=cfg.by_slide, seed=cfg.seed)
@@ -615,6 +831,9 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     import os
     import shutil
     import subprocess
+
+    if _is_cellcls(cfg):
+        return _train_cells(cfg, out)
 
     cellvit = os.environ.get("CELLVIT_ROOT")
     if not cellvit or not Path(cellvit).is_dir():
@@ -643,6 +862,9 @@ def validate(cfg, samples, out: Path) -> dict[str, Any]:
     """
     import json
     import shutil
+
+    if _is_cellcls(cfg):
+        return _validate_cells(cfg, out)
 
     run_dir = _find_run_dir(cfg, out)
     val_results_dir = run_dir / "val_results"
@@ -708,6 +930,9 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
 
     from ..weights import load_label_map
 
+    if _is_cellcls(cfg):
+        return _export_cells(cfg, out)
+
     cellvit = os.environ.get("CELLVIT_ROOT")
     if not cellvit or not Path(cellvit).is_dir():
         raise RuntimeError("set $CELLVIT_ROOT to the CellViT-plus-plus checkout")
@@ -763,6 +988,6 @@ def report(cfg, samples, out: Path) -> dict[str, Any]:
 
 STAGE_FUNCS = {
     "annotate": annotate, "segment": segment, "transfer": transfer,
-    "tile": tile, "split": split, "train": train, "validate": validate,
-    "export": export, "report": report,
+    "tile": tile, "crop": crop, "split": split, "train": train,
+    "validate": validate, "export": export, "report": report,
 }

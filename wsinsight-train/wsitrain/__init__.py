@@ -86,6 +86,6 @@ def _harden_tqdm_against_resize() -> None:
 _harden_tqdm_against_resize()
 
 STAGES = (
-    "annotate", "segment", "transfer", "tile",
+    "annotate", "segment", "transfer", "tile", "crop",
     "split", "train", "validate", "export", "report",
 )

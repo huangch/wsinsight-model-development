@@ -18,6 +18,7 @@ _REQUIRED_OUTPUT = {
     "segment": "nuclei_per_sample",
     "transfer": "cells_per_sample",
     "tile": "tiles",
+    "crop": "cells",
 }
 
 
@@ -66,7 +67,9 @@ def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = Non
         try:
             info = STAGE_FUNCS[stage](cfg, samples, cfg.output)
             key = _REQUIRED_OUTPUT.get(stage)
-            if key and not (info or {}).get(key):
+            # Only one of tile/crop applies to a given model; the other reports
+            # itself skipped and owes no output.
+            if key and not (info or {}).get("skipped") and not (info or {}).get(key):
                 mf.mark(stage, "failed", **(info or {}))
                 raise SystemExit(f"[{stage}] produced no {key}; refusing to mark it done")
             mf.mark(stage, "done", **(info or {}))

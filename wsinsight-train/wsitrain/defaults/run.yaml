@@ -47,3 +47,26 @@ tune: 0                      # 0 = single run; N = auto-tune iterations
 # markers
 markers_csv: null            # null => kurtorank bundled default
 top_k_markers: 25
+
+# non-end-to-end cell classifier
+# object_detection is the switch: end2end trains CellViT from tiles; anything
+# else means an external detector supplies the cells at inference and only a
+# crop classifier is trained here.
+object_detection: end2end    # end2end | stardist
+# The four below have no defaults on purpose: they decide the deployed model's
+# geometry, and a wrong guess trains a model that scores well and predicts badly.
+architecture: null           # any torchvision classifier, e.g. resnet50
+patch_size_pixels: null
+patch_spacing_um_px: null
+stain_normalization: null
+norm_sample_size: 256        # cells per slide used to estimate the stain matrix
+# csbdeep normalize() defaults, stated explicitly so the exported model can
+# tell wsinsight to detect with the percentiles this run segmented with.
+stardist_normalization_pmin: 3.0
+stardist_normalization_pmax: 99.8
+epochs: 50
+batch_size: 128
+lr: 0.0001
+weight_decay: 0.0001
+pretrained: false            # start from torchvision's ImageNet weights
+num_workers: 8

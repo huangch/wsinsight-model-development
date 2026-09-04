@@ -26,9 +26,10 @@ wsitrain --version
 ```
 
 Each pipeline stage is also a command: `annotate`, `segment`, `transfer`,
-`tile`, `split`, `train`, `validate`, `export`, `report`. They take the same
-`--input/--tissue/--output` and refuse to start until the stages they depend on
-are done, so you can step through the pipeline one command at a time. `run`
+`tile`, `crop`, `split`, `train`, `validate`, `export`, `report`. They take the
+same `--input/--tissue/--output` and refuse to start until the stages they
+depend on are done, so you can step through the pipeline one command at a time.
+`tile` and `crop` are alternatives chosen by `--object-detection`. `run`
 drops stages with `--run-skip a b`.
 
 A stage command only offers the flags its own stage reads; everything else is

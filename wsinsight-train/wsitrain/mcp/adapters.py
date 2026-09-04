@@ -50,7 +50,9 @@ def args_to_argv(command: str, params: Iterable[dict], kwargs: dict[str, Any]) -
         if kind == "bool_flag":
             if value:
                 argv.append(flag)
-            # False → omit (the CLI default is False for every bool_flag).
+            elif spec.get("off_flag"):
+                # Tri-state: the setting has no default, so "off" has to be said.
+                argv.append(spec["off_flag"])
             continue
 
         if isinstance(value, (list, tuple)):

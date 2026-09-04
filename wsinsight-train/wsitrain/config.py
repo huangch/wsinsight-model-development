@@ -77,6 +77,27 @@ class RunConfig:
     markers_csv: Path | None = None
     top_k_markers: int = 25
 
+    # non-end-to-end cell classifier. `object_detection` is the switch: with
+    # "end2end" the CellViT path runs, otherwise cells come from that detector
+    # and only the crop classifier is trained. The three None fields decide the
+    # deployed model's geometry, so they are required rather than defaulted.
+    object_detection: str = "end2end"    # end2end | stardist
+    architecture: str | None = None      # any torchvision classifier, e.g. resnet50
+    patch_size_pixels: int | None = None
+    patch_spacing_um_px: float | None = None
+    stain_normalization: bool | None = None
+    # csbdeep's normalize() defaults, made explicit: the exported model tells
+    # wsinsight to detect with the same percentiles this run segmented with.
+    stardist_normalization_pmin: float = 3.0
+    stardist_normalization_pmax: float = 99.8
+    norm_sample_size: int = 256          # cells used to estimate the stain matrix
+    epochs: int = 50
+    batch_size: int = 128
+    lr: float = 1e-4
+    weight_decay: float = 1e-4
+    pretrained: bool = False
+    num_workers: int = 8
+
     def __post_init__(self) -> None:
         # YAML gives a list, the CLI gives a tuple; pin one so the manifest
         # comparison and the declared type agree whatever the source.
@@ -88,6 +109,16 @@ class RunConfig:
             value = getattr(self, name)
             if value is not None and not isinstance(value, Path):
                 setattr(self, name, Path(value))
+        if self.object_detection != "end2end":
+            missing = [n for n in ("architecture", "patch_size_pixels",
+                                   "patch_spacing_um_px", "stain_normalization")
+                       if getattr(self, n) is None]
+            if missing:
+                raise ValueError(
+                    f"--object-detection {self.object_detection} needs "
+                    + ", ".join("--" + m.replace("_", "-") for m in missing)
+                    + ": they define the deployed model's geometry and have no "
+                      "sensible default.")
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)

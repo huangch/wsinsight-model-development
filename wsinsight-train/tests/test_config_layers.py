@@ -213,7 +213,8 @@ def test_io_keys_in_a_config_file_are_ignored(tmp_path, cohort, seen_cfg):
 
 def test_unknown_key_is_rejected_with_a_suggestion(tmp_path, cohort):
     f = tmp_path / "c.yaml"
-    f.write_text("tile_size: 512\n")
+    # Not "tile_size": that is now closer to batch_size than to tile_px.
+    f.write_text("tile_pixels: 512\n")
 
     with pytest.raises(SystemExit, match="tile_px"):
         _run(cohort, tmp_path / "out", "--config", str(f))

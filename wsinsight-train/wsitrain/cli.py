@@ -116,6 +116,41 @@ def _add_tile_px(p: argparse.ArgumentParser) -> None:
     p.add_argument("--tile-px", type=int, default=None, help="tile edge in pixels")
 
 
+def _add_stardist_norm(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--stardist-normalization-pmin", type=float, default=None,
+                   help="low percentile for StarDist input normalisation")
+    p.add_argument("--stardist-normalization-pmax", type=float, default=None,
+                   help="high percentile for StarDist input normalisation")
+
+
+def _add_cellcls(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--object-detection", default=None, choices=("end2end", "stardist"),
+                   help="end2end trains CellViT; stardist trains a crop classifier")
+    p.add_argument("--architecture", default=None,
+                   help="torchvision classifier for --object-detection stardist")
+    p.add_argument("--patch-size-pixels", type=int, default=None,
+                   help="cell crop edge, in pixels")
+    p.add_argument("--patch-spacing-um-px", type=float, default=None,
+                   help="microns per pixel the crop is resampled to")
+    p.add_argument("--stain-normalization", dest="stain_normalization",
+                   action="store_true", default=None,
+                   help="Macenko-normalise crops, as wsinsight does at inference")
+    p.add_argument("--no-stain-normalization", dest="stain_normalization",
+                   action="store_false", help="store crops unnormalised")
+    p.add_argument("--norm-sample-size", type=int, default=None,
+                   help="cells sampled per slide to estimate the stain matrix")
+
+
+def _add_cellcls_train(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--epochs", type=int, default=None)
+    p.add_argument("--batch-size", type=int, default=None)
+    p.add_argument("--lr", type=float, default=None, help="learning rate")
+    p.add_argument("--weight-decay", type=float, default=None)
+    p.add_argument("--pretrained", action="store_true", default=None,
+                   help="start from torchvision's ImageNet weights")
+    p.add_argument("--num-workers", type=int, default=None)
+
+
 def _add_model_id(p: argparse.ArgumentParser) -> None:
     p.add_argument("--backbone", default=None, help="CellViT backbone, e.g. SAM-H-x40")
     p.add_argument("--fold", default=None, help="fold name, e.g. fold_0")
@@ -196,11 +231,12 @@ def _add_train(p: argparse.ArgumentParser) -> None:
 # label space and the device on top of the model identity.
 _STAGE_FLAGS = {
     "annotate": (_add_labelspace, _add_annotate),
-    "segment": (_add_segment, _add_transform, _add_mpp, _add_gpus),
+    "segment": (_add_segment, _add_transform, _add_mpp, _add_gpus, _add_stardist_norm),
     "transfer": (_add_transfer, _add_transform, _add_labelspace, _add_mpp),
     "tile": (_add_tile, _add_tile_px),
+    "crop": (_add_cellcls, _add_stardist_norm, _add_mpp),
     "split": (_add_split, _add_model_id, _add_labelspace, _add_gpus),
-    "train": (_add_train, _add_model_id, _add_gpus),
+    "train": (_add_train, _add_model_id, _add_gpus, _add_cellcls_train),
     "validate": (_add_model_id,),
     "export": (_add_model_id, _add_tile_px),
     "report": (),
@@ -210,7 +246,8 @@ _STAGE_FLAGS = {
 # _fields_for can read it back.
 _RUN_FLAGS = (_add_labelspace, _add_annotate, _add_segment, _add_mpp, _add_transform,
               _add_transfer, _add_tile, _add_tile_px, _add_split, _add_train,
-              _add_model_id, _add_gpus)
+              _add_model_id, _add_gpus, _add_cellcls, _add_stardist_norm,
+              _add_cellcls_train)
 
 
 def _fields_for(command: str) -> set[str]:
@@ -221,11 +258,33 @@ def _fields_for(command: str) -> set[str]:
         add(p)
     return {a.dest for a in p._actions} & set(RunConfig.__dataclass_fields__)
 
+def parser_for(command: str) -> argparse.ArgumentParser:
+    """The flags a command accepts, assembled exactly as ``main`` does.
+
+    The MCP schema reflects this rather than restating it: the hand-written
+    copy it replaced had drifted to naming flags the CLI rejects.
+    """
+    p = argparse.ArgumentParser(add_help=False)
+    if command == "check":
+        p.add_argument("--input", required=True)
+        p.add_argument("--tissue", default="pantissue")
+        p.add_argument("--output", default=None)
+        return p
+    _add_common(p)
+    for add in (_RUN_FLAGS if command == "run" else _STAGE_FLAGS.get(command, ())):
+        add(p)
+    if command == "run":
+        p.add_argument("--run-skip", action="extend", nargs="+", default=[],
+                       metavar="STAGE", help="run everything EXCEPT these stages")
+    return p
+
+
 _STAGE_HELP = {
     "annotate": "Label cells with kurtorank.",
     "segment": "Segment nuclei on each H&E.",
     "transfer": "Join cell labels onto the H&E nuclei.",
     "tile": "Cut labelled slides into training tiles.",
+    "crop": "Cut one centred crop per cell (non-end-to-end models).",
     "split": "Build train/val lists and the CellViT config.",
     "train": "Train the CellViT classifier head.",
     "validate": "Score the trained head and write the confusion matrix.",
@@ -240,6 +299,10 @@ _OVERRIDE_FIELDS = (
     "diameter", "tile_px", "mpp", "min_cells", "bg_thresh", "overlap",
     "val_frac", "by_slide", "seed", "weight_cap", "backbone", "fold",
     "markers_csv", "top_k_markers",
+    "object_detection", "architecture", "patch_size_pixels",
+    "patch_spacing_um_px", "stain_normalization", "norm_sample_size",
+    "stardist_normalization_pmin", "stardist_normalization_pmax",
+    "epochs", "batch_size", "lr", "weight_decay", "pretrained", "num_workers",
 )
 
 

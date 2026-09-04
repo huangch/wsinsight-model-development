@@ -31,7 +31,8 @@ def test_all_stages_run_by_default(runnable, monkeypatch):
 
 
 def _nonempty(stage):
-    return {"nuclei_per_sample": {"a": 1}, "cells_per_sample": {"a": 1}, "tiles": 1}
+    return {"nuclei_per_sample": {"a": 1}, "cells_per_sample": {"a": 1},
+            "tiles": 1, "cells": 1}
 
 
 def _only(*stages):

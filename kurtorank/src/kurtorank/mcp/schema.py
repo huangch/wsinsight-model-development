@@ -1,71 +1,65 @@
-"""Hand-authored CLI schema for the three Kurtorank v3 subcommands.
+"""CLI schema for the Kurtorank subcommands, reflected from Click.
 
-The sibling ``wsinsight/mcp`` reflects its Click-based CLI via
-``wsinsight.cli.cli_schema.json``. ``kurtorank`` also uses Click, but
-its per-option surface is small enough to enumerate by hand. Each
-entry below mirrors an ``@click.option`` declaration in
-:file:`kurtorank/annotate/main.py`, :file:`kurtorank/rank/main.py`,
-or :file:`kurtorank/seed/main.py`.
+The sibling ``wsinsight/mcp`` reflects its Click CLI through a generated
+``cli_schema.json``. This table used to be enumerated by hand and had drifted:
+it offered ``--output-dir`` where ``build-panel`` takes ``--output``, an
+``annotate --panel`` that does not exist, and omitted 27 real options. Reading
+the options off the Click commands keeps the two in step by construction.
 
-Drift check: when you add a flag to the CLI, update the matching schema
-below. ``rank-markers`` forwards all flags unchanged to the
-underlying argparse layer in :file:`kurtorank/rank/main.py` — its
-schema entry accepts the full argparse argv via ``--``.
+``rank-markers`` is the one hand-declared entry: it is a variadic positional
+passthrough into an argparse layer, which the adapter appends without a flag.
 """
 
 from __future__ import annotations
 
-# Mirrors ``kurtorank.cli.cli`` subcommands.
+import click
+
+from ..cli import cli
+
+# MCP tool names cannot carry a dash.
+_MCP_NAME = {name: name.replace("-", "_") for name in cli.commands}
+
+
+def _entry(param: click.Option) -> dict:
+    entry: dict = {
+        "name": param.name,
+        "kind": "bool_flag" if param.is_flag else "string",
+        "required": bool(param.required),
+        "help": param.help or "",
+    }
+    if param.multiple:
+        entry["nargs"] = "+"
+    if param.default is not None and param.default != ():
+        entry["default"] = param.default
+    if param.secondary_opts:
+        # `--no-x` / `--include-cancer`: a flag defaulting to True cannot be
+        # turned off by omission, so the adapter needs the other spelling.
+        entry["off_flag"] = param.secondary_opts[0]
+    if isinstance(param.type, click.Choice):
+        entry["choices"] = list(param.type.choices)
+    return entry
+
+
+def _entries(command: click.Command) -> list[dict]:
+    return [_entry(p) for p in command.params if isinstance(p, click.Option)]
+
+
 COMMANDS: dict[str, list[dict]] = {
-    "annotate": [
-        {"name": "xenium_dir", "kind": "path", "required": True,
-         "help": "Xenium 'outs' directory."},
-        {"name": "markers_csv", "kind": "path", "required": False,
-         "help": "Marker gene CSV (default: bundled markers-v6.csv)."},
-        {"name": "tissue_type", "kind": "string", "required": True,
-         "help": "Tissue type for marker filtering "
-                 "(e.g. 'breast', 'lung')."},
-        {"name": "output_dir", "kind": "path", "required": False,
-         "help": "Output directory. Default: xenium-path."},
-        {"name": "common_only", "kind": "bool_flag", "default": True,
-         "help": "--common-only / --no-common-only."},
-        {"name": "normal_only", "kind": "bool_flag", "default": True,
-         "help": "--normal-only / --include-cancer."},
-        {"name": "panel", "kind": "string", "required": False,
-         "help": "Optional panel name to restrict markers."},
-    ],
-    "rank_markers": [
-        # The CLI is a passthrough (Click.UNPROCESSED) into the argparse
-        # module ``kurtorank.rank.main.rank_markers_main``. The MCP tool
-        # therefore takes a single ``args`` list mirroring the full
-        # ``kurtorank rank-markers --help`` surface (see that module for
-        # the canonical list).
-        {"name": "args", "kind": "string_list", "nargs": "+", "required": True,
-         "help": "Passthrough argv list. Always start with the markers CSV "
-                 "path (or ``-`` for stdin), then any combination of "
-                 "``--atlas``, ``--species``, ``--tissue``, "
-                 "``--output``, etc. See ``kurtorank rank-markers --help``."},
-    ],
-    "build_panel": [
-        {"name": "atlases_csv", "kind": "string", "required": False,
-         "help": "Comma-separated DISCO atlas slugs "
-                 "(e.g. 'blood,lung,adipose_cell')."},
-        {"name": "all_atlases", "kind": "bool_flag", "default": False,
-         "help": "Fetch every atlas matching the type filter."},
-        {"name": "list_atlases", "kind": "bool_flag", "default": False,
-         "help": "Print the DISCO atlas catalog and exit (no download)."},
-        {"name": "include_disease", "kind": "bool_flag", "default": False,
-         "help": "Also include atlases where type=='disease'."},
-        {"name": "include_celltype", "kind": "bool_flag", "default": False,
-         "help": "Also include atlases where type=='cell type'."},
-        {"name": "output_dir", "kind": "path", "required": False},
-    ],
+    _MCP_NAME[name]: _entries(cmd) for name, cmd in cli.commands.items()
 }
+
+# Positional passthrough; the adapter appends these verbatim after the command.
+COMMANDS["rank_markers"] = [
+    {"name": "args", "kind": "string_list", "nargs": "+", "required": True,
+     "help": "Passthrough argv list. Start with the markers CSV path (or '-' "
+             "for stdin), then any of --atlas, --species, --tissue, --output, "
+             "etc. See `kurtorank rank-markers --help`."},
+]
 
 
 # All three commands are potentially long (Census download / annotation pass),
 # so the MCP layer treats them as background jobs by default.
-LONG_RUNNING: frozenset[str] = frozenset({"annotate", "rank_markers", "build_panel"})
+LONG_RUNNING: frozenset[str] = frozenset(COMMANDS)
 
 
 def is_long_running(command: str) -> bool:

@@ -3,7 +3,7 @@
 Usage::
 
     wsinsight-train-mcp                       # stdio (default)
-    wsinsight-train-mcp --http 127.0.0.1:8765 # Streamable HTTP
+    wsinsight-train-mcp --http 127.0.0.1:8768 # Streamable HTTP
     wsinsight-train-mcp --max-concurrent 1    # serialise heavy GPU stages
     wsinsight-train-mcp --cwd /path/to/repo   # run child wsitrain from cwd
 

@@ -3,7 +3,7 @@
 Usage::
 
     kurtorank-mcp                       # stdio (default)
-    kurtorank-mcp --http 127.0.0.1:8765 # Streamable HTTP
+    kurtorank-mcp --http 127.0.0.1:8769 # Streamable HTTP
     kurtorank-mcp --max-concurrent 1    # serialise Census downloads
     kurtorank-mcp --cwd /path/to/repo   # run child kurtorank from cwd
 """

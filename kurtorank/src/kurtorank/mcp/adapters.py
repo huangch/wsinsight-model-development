@@ -44,6 +44,9 @@ def args_to_argv(command: str, params: Iterable[dict], kwargs: dict[str, Any]) -
         if kind == "bool_flag":
             if value:
                 argv.append(flag)
+            elif spec.get("off_flag"):
+                # A flag defaulting to on cannot be turned off by omission.
+                argv.append(spec["off_flag"])
             continue
 
         if isinstance(value, (list, tuple)):

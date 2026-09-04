@@ -14,7 +14,7 @@ pip install -e ".[mcp]"
 kurtorank-mcp
 
 # Or run on loopback:
-kurtorank-mcp --http 127.0.0.1:8765
+kurtorank-mcp --http 127.0.0.1:8769
 ```
 
 ## Tools exposed
@@ -72,8 +72,13 @@ kurtorank/mcp/
 ├── __init__.py     # public surface (build_server)
 ├── __main__.py     # kurtorank-mcp console-script entry point
 ├── server.py       # FastMCP tool registration + per-tool argv builder
-├── schema.py       # hand-authored CLI schema
+├── schema.py       # CLI schema, reflected from the Click commands
 ├── adapters.py     # snake_case → argv translator (incl. passthrough path)
 ├── jobs.py         # background Job + JobManager
 └── README.md       # this file
 ```
+
+`schema.py` reads the options off `kurtorank.cli.cli`, so a new flag becomes a
+tool argument with no second edit. It used to be enumerated by hand and had
+drifted to offering `--output-dir` where `build-panel` takes `--output`;
+`tests/test_mcp_schema_parity.py` now fails if the two diverge.

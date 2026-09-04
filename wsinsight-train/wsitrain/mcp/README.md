@@ -13,7 +13,7 @@ pip install -e ".[mcp]"
 wsinsight-train-mcp
 
 # Or run over Streamable HTTP on loopback:
-wsinsight-train-mcp --http 127.0.0.1:8765
+wsinsight-train-mcp --http 127.0.0.1:8768
 ```
 
 ## Tools exposed

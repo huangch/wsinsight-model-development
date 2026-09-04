@@ -178,7 +178,7 @@ def build_server(
         for Streamable HTTP.
     """
     mcp = FastMCP(
-        title="WSInsight-Train MCP",
+        name="WSInsight-Train MCP",
         instructions=(
             "Drive the wsitrain headless training pipeline. Tools of the "
             "form `wsitrain_<command>` mirror the CLI subcommands. Long "

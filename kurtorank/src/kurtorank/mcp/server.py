@@ -171,7 +171,7 @@ def build_server(
         for Streamable HTTP.
     """
     mcp = FastMCP(
-        title="Kurtorank MCP",
+        name="Kurtorank MCP",
         instructions=(
             "Drive the kurtorank spatial-transcriptomics annotation "
             "pipeline. Tools of the form `kurtorank_<command>` mirror "

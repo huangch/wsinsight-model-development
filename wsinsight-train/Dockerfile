@@ -44,7 +44,7 @@ RUN conda --version && \
 # Create training environment (pure Python, no conda-forge packages needed)
 # ------------------------------------
 RUN conda update -n base --yes --override-channels -c conda-forge conda && \
-    conda create -y -n wsitrain -c conda-forge python=3.11 "setuptools<67" pip && \
+    conda create -y --override-channels -n wsitrain -c conda-forge python=3.11 "setuptools<67" pip && \
     conda clean -afy
 
 ENV CONDA_DEFAULT_ENV=wsitrain

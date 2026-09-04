@@ -72,7 +72,7 @@ QuST-produced `hne_cell_classification` model happens to declare.
 
 ## MCP server (`wsinsight-train-mcp`)
 
-- Entry point `wsitrain.mcp.__main__:main`; extra `mcp = ["fastmcp>=2.0"]`.
+- Entry point `wsitrain.mcp.__main__:main`; extra `mcp = ["fastmcp>=4.0,<5"]`.
   stdio by default; `--http HOST:PORT` has **no default port** — the docs use
   8768 (after wsinsight 8765 / sptxinsight 8766 / hplot 8767).
 - `mcp/schema.py` is **reflected from `cli.parser_for()`**, the same parser the

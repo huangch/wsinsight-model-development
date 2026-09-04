@@ -48,6 +48,7 @@ pixel-aligned). `wsitrain check` lists what it found in
 wsitrain check --input DIR [--tissue T] [--output DIR]  # preflight: samples + env + GPU
 wsitrain run --input DIR --tissue T ...      # full pipeline
 wsitrain <stage> --input DIR --tissue T ...  # one stage, e.g. wsitrain segment
+wsitrain schema                              # JSON schema of every command
 wsitrain --version
 ```
 

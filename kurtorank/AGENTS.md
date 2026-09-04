@@ -21,13 +21,14 @@ sample into a per-cluster cell-type assignment CSV. Python >=3.11, v3.1.0.
 
 ## CLI
 
-Entry point `kurtorank` (Click). Three commands:
+Entry point `kurtorank` (Click). Four commands:
 
 - `annotate` — the main pass. 25 options; writes the assignment CSVs.
 - `build-panel` — assemble a marker panel from DISCO atlases. Note the output
   flag is `--output` / `-o`, **not** `--output-dir`.
 - `rank-markers` — a variadic **positional passthrough** into the argparse
   layer in `rank/main.py`. It takes no Click options of its own.
+- `schema` — emit a machine-readable JSON schema of every sub-command (`{"schema_version": 1, "commands": {...}}`). Every engine in the family exposes this, so downstream tools need no per-project casing.
 
 ## Assignment-CSV naming (the wsitrain contract)
 
@@ -43,7 +44,7 @@ the already-annotated files on disk of their names.
 
 ## MCP server (`kurtorank-mcp`)
 
-- Entry point `kurtorank.mcp.__main__:main`; extra `mcp = ["fastmcp>=2.0"]`.
+- Entry point `kurtorank.mcp.__main__:main`; extra `mcp = ["fastmcp>=4.0,<5"]`.
   stdio by default; `--http HOST:PORT` has **no default port** — the docs use
   8769 (after wsinsight 8765 / sptxinsight 8766 / hplot 8767 / wsitrain 8768).
 - `mcp/schema.py` is **reflected from the Click commands**, not hand-written.

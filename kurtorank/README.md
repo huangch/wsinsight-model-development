@@ -11,19 +11,30 @@ rank-aggregated into a final subtype call per Leiden / graphclust cluster.
 
 This is the installable `kurtorank` Python package (v3.1.0).
 
+## Documentation map
+
+| File | Audience | Contents |
+| --- | --- | --- |
+| `README.md` (this file) | humans | what the method does, how to install it, worked end-to-end examples |
+| `SKILL.md` | an AI agent *using* the package | full CLI/option reference, decision guide, troubleshooting |
+| `AGENTS.md` | an AI agent *developing* the package | repo layout, internal contracts, tests, lint baseline |
+
 ## Package layout
 
 ```
 kurtorank/
 ├── pyproject.toml
-├── README.md
-├── SKILL.md
+├── README.md           # this file
+├── SKILL.md            # agent-facing usage reference
+├── AGENTS.md           # agent-facing development guide
 └── src/kurtorank/
-    ├── __init__.py        # exports __version__ + rerank_markers + build_panel
-    ├── __main__.py        # `python -m kurtorank`
-    ├── cli.py             # click group: annotate + rank-markers + build-panel
+    ├── __init__.py     # exports __version__ + rerank_markers + build_panel
+    ├── __main__.py     # `python -m kurtorank`
+    ├── cli.py          # click group: annotate + rank-markers + build-panel + schema
     ├── annotate/main.py   # annotate pipeline
     ├── rank/main.py       # Census reranker
+    ├── seed/              # DISCO panel builder (build-panel)
+    ├── mcp/               # kurtorank-mcp server
     └── markers/
         ├── __init__.py    # default_markers_csv()
         └── data/markers-v6.csv
@@ -38,12 +49,12 @@ the install.
 ## 1. Install
 
 Any Python environment with `pip` will work — conda, venv, mamba, pixi,
-uv, etc. Developed and tested against **Python 3.12**; Python 3.10+ is
-supported.
+uv, etc. **Python 3.11+** is required (3.11 is what every packaged install
+path — `conda-setup.sh` and the Dockerfile — builds).
 
 ```bash
 # pick / create an env, e.g.:
-#   conda create -n kurtorank python=3.12 -y && conda activate kurtorank
+#   conda create -n kurtorank python=3.11 -y && conda activate kurtorank
 #   python -m venv .venv && source .venv/bin/activate
 # then, from the repository root (the directory containing pyproject.toml):
 pip install -e .
@@ -51,7 +62,15 @@ pip install -e .
 
 Core deps (pulled in automatically): `scanpy`, `squidpy`, `spatialdata`,
 `spatialdata-io`, `anndata`, `torch`, `scipy`, `statsmodels`, `pandas`,
-`numpy`, `click`, `tqdm`, `cellxgene-census`, `tiledbsoma`.
+`numpy`, `click`, `tqdm`.
+
+Optional extras:
+
+| Extra | Adds | Needed for |
+| --- | --- | --- |
+| `kurtorank[census]` | `cellxgene-census`, `tiledbsoma` | `rank-markers` only. Imported lazily, so a missing Census is not a broken install. |
+| `kurtorank[mcp]` | `fastmcp` | the `kurtorank-mcp` server. |
+| `kurtorank[dev]` | `pytest`, `ruff`, `pre_commit` | running the test suite. |
 
 For co-installation with the shared `wsinsight`/`sptxinsight` environment,
 KurtoRank pins a compatibility set (`numpy<2`, `zarr<3`, and spatial stack
@@ -81,15 +100,19 @@ kurtorank --version            # kurtorank, version 3.1.0
 kurtorank annotate --help
 kurtorank rank-markers --help
 kurtorank build-panel --help
+kurtorank schema --help
 ```
 
-Three subcommands:
+Four subcommands:
 
 | Subcommand | Purpose |
 | --- | --- |
 | `kurtorank annotate` | QC + ensemble annotation of a Xenium sample. |
 | `kurtorank rank-markers` | Rerank a markers CSV against a CELLxGENE Census atlas. |
 | `kurtorank build-panel` | Produce a skeleton marker panel from DISCO atlases. |
+| `kurtorank schema` | Emit a machine-readable JSON schema of every subcommand. |
+
+Every option is documented in `SKILL.md` §3; this file covers the common ones.
 
 ---
 
@@ -110,7 +133,7 @@ kurtorank annotate \
 | Flag | Meaning |
 | --- | --- |
 | `--xenium-dir` | Path to Xenium `outs/` directory. **Required**. |
-| `--tissue-type` | `bladder, bone, brain, breast, cervix, circulating, colorectal, heart, immune, kidney, liver, lung, lymph_node, ovary, pancreas, prostate, skin, tonsil`. **Required**. |
+| `--tissue-type` | `bladder, bone, brain, breast, cervix, circulating, colorectal, head_neck, heart, immune, kidney, liver, lung, lymph_node, ovary, pancreas, prostate, skin, tonsil`. **Required**. |
 | `--markers-csv` | Panel CSV. Defaults to the bundled `markers-v6.csv`; pass a path to override. |
 | `--output-dir` | Where to write `annotated.h5ad`, plots, CSVs (defaults to `--xenium-dir`). |
 | `--common-only / --no-common-only` | Keep only `common==True` rows. |
@@ -150,7 +173,7 @@ Full list: `kurtorank annotate --help`.
 Needed only when (a) adding/removing subtypes, (b) refreshing against a
 newer Census release, or (c) customizing the panel to a different tissue
 mix. The bundled `markers-v6.csv` ships a curated + already-reranked panel
-for 18 tissues.
+for 19 tissues. Requires `kurtorank[census]`.
 
 ### CLI
 
@@ -176,7 +199,7 @@ Key flags:
   kept unchanged with `rank_source="skipped"`. **Omit both `--tissues` and
   `--tissue` to rerank every tissue in the input CSV.**
 - `--parallel N` — one worker per tissue group (effective cap is
-  `n_tissues`). Use 2–4 when streaming online; up to `n_tissues` (18 for
+  `n_tissues`). Use 2–4 when streaming online; up to `n_tissues` (19 for
   the bundled panel) with a local SOMA.
 - `--checkpoint` — CSV written after each tissue finishes. Survives
   interruptions.
@@ -191,7 +214,7 @@ kurtorank rank-markers \
   --input  markers-v6.csv \
   --output markers-v6.csv \
   --census-uri /path/to/census-soma \
-  --parallel 18 \
+  --parallel 19 \
   --checkpoint checkpoint.csv \
   --log-file rank_all.log
 ```
@@ -254,7 +277,7 @@ Notes:
   drifts).
 - **Keep `--parallel` to 2–4.** Streaming is I/O-bound; more workers
   thrash the shared connection and trigger S3 throttling.
-- Budget **10–20 h for the full 18-tissue run** (versus ~30 min local).
+- Budget **10–20 h for the full 19-tissue run** (versus ~30 min local).
   Always use `--checkpoint` so transient errors don't cost a full restart.
 
 Outputs:
@@ -342,7 +365,7 @@ and reused until DISCO bumps the atlas checksum.
    (`major_type`, `pannuke_label`, `hne_type`, `hne_label`, `common`,
    `malignant`) that `annotate` consumes.
 3. Optionally rerank the curated panel against Census with
-   `kurtorank rank-markers` (see §6).
+   `kurtorank rank-markers` (see §4).
 4. Pass the final CSV to `kurtorank annotate --markers-csv ...`.
 
 ### 5.4. Python API
@@ -367,14 +390,14 @@ build_panel(
 # (once) rerank the panel against a new Census release:
 kurtorank rank-markers \
   --input  markers-v6.csv \
-  --output markers-v5.ranked.csv \
+  --output markers-v6.ranked.csv \
   --census-uri /path/to/census-soma \
   --parallel 8
 
 # (per slide) annotate:
 kurtorank annotate \
   --xenium-dir /data/slides/sample_A/outs \
-  --markers-csv markers-v5.ranked.csv \
+  --markers-csv markers-v6.ranked.csv \
   --tissue-type breast \
   --use-top-k-markers 30 \
   --output-dir /data/results/sample_A

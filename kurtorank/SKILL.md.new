@@ -11,9 +11,6 @@ applyTo: "**/kurtorank/**"
 > samples with an unsupervised ensemble, reranking marker panels against
 > CELLxGENE Census, and seeding new panels from DISCO atlases.
 
-This file is the **usage** reference. To modify the package itself, read
-`AGENTS.md`; for the method and human-facing walkthroughs, read `README.md`.
-
 ---
 
 ## 1. What Is kurtorank?
@@ -165,10 +162,7 @@ yourself.
 
 Anything else is rejected by Click before the pipeline starts. `immune` and
 `circulating` are also added automatically to any tissue unless you pass
-`--no-include-immune`. If `--tissue-type` is itself `immune` or `circulating`,
-the selection is a set membership test, so no duplicate rows appear — only the
-other of the pair is actually added (`--tissue-type immune` gains `circulating`
-rows, and vice versa).
+`--no-include-immune`.
 
 #### 3.1.2 Valid `--method` values
 
@@ -176,11 +170,8 @@ rows, and vice versa).
 `fisher_fdr`, `prop_fdr`, `corr_fdr`, `spatial_co_fdr`.
 
 Repeat the flag to select several. Omit it entirely to use the built-in
-default switch, which enables `emp_fdr`, `topn_overlap_fdr`, `de_fdr`,
-`fisher_fdr`, `corr_fdr` and `spatial_co_fdr`, and leaves
-`threshold_overlap_fdr`, `z_fdr` and `prop_fdr` off. That is the tested
-configuration, so only narrow the set when the user asks for a specific
-ablation.
+default switch — that is the tested configuration, so only narrow the set when
+the user asks for a specific ablation.
 
 #### 3.1.3 Outputs
 
@@ -260,9 +251,9 @@ kurtorank rank-markers \
 Runtime behaviour that determines how you should call it:
 
 - **One worker per tissue.** Effective parallelism is
-  `min(--parallel, n_tissues)`; all 19 tissue types in the bundled panel are
-  rankable (each has a Census mapping). Raising `--parallel` past that does
-  nothing — the bottleneck is the per-tissue TileDB preload.
+  `min(--parallel, n_tissues)`; the bundled panel has 18 rankable tissues.
+  Raising `--parallel` past that does nothing — the bottleneck is the
+  per-tissue TileDB preload.
 - **Local SOMA**: roughly 15–25 min for a four-tissue subset, 25–40 min for the
   full panel. Wall-clock is dominated by the slowest tissue preload
   (`immune` > `colorectal` > `circulating` > `breast`).
@@ -451,7 +442,7 @@ What does the user want?
 │         └─ no  → the panel has no rows for it; build-panel + curation first
 ├─ "improve / sharpen the marker panel"
 │     → kurtorank rank-markers
-│         ├─ local Census mirror available → --census-uri, --parallel up to n_tissues (19 for the bundled panel)
+│         ├─ local Census mirror available → --census-uri, --parallel up to n_tissues
 │         └─ streaming only → --parallel 2-4, --checkpoint, pin --census-version
 ├─ "start a panel for a new tissue"
 │     → kurtorank build-panel --list-atlases → --atlases <slug> -o seed.csv

@@ -4,6 +4,11 @@ Unsupervised ensemble subtype annotation for gene-limited spatial
 transcriptomics (Xenium-scale panels). Turns a marker table plus a Xenium
 sample into a per-cluster cell-type assignment CSV. Python >=3.11, v3.1.0.
 
+**This file is for *developing* this package.** To *use* the CLI, read
+`SKILL.md` (full option reference, decision guide, troubleshooting). For the
+method and worked examples, read `README.md`. Do not duplicate the option
+tables from those files here.
+
 ## Environment (read first)
 
 - Co-installable with the shared `wsinsight` conda env; that is the intended
@@ -21,14 +26,22 @@ sample into a per-cluster cell-type assignment CSV. Python >=3.11, v3.1.0.
 
 ## CLI
 
-Entry point `kurtorank` (Click). Four commands:
+Entry point `kurtorank` (Click). Four commands (`annotate`, `build-panel`,
+`rank-markers`, `schema`); options are documented in `SKILL.md` §3. What
+matters when changing them:
 
-- `annotate` — the main pass. 25 options; writes the assignment CSVs.
-- `build-panel` — assemble a marker panel from DISCO atlases. Note the output
-  flag is `--output` / `-o`, **not** `--output-dir`.
+- `annotate` — the main pass; the only command with `--output-dir`.
+- `build-panel` — the output flag is `--output` / `-o`, **not** `--output-dir`.
 - `rank-markers` — a variadic **positional passthrough** into the argparse
-  layer in `rank/main.py`. It takes no Click options of its own.
-- `schema` — emit a machine-readable JSON schema of every sub-command (`{"schema_version": 1, "commands": {...}}`). Every engine in the family exposes this, so downstream tools need no per-project casing.
+  layer in `rank/main.py`. It takes no Click options of its own, so adding a
+  Click option here would shadow, not extend, the argparse surface.
+- `schema` — emits `{"schema_version": 1, "commands": {...}}`. Every engine in
+  the family exposes this, so downstream tools need no per-project casing.
+  Regenerate consumers after any option change.
+- The bundled panel (`markers/data/markers-v6.csv`) is 347 rows over 19 tissue
+  types, and `TISSUE_MAP` in `rank/main.py` has a Census mapping for all 19 —
+  keep the two in step when adding a tissue, or `rank-markers` silently skips
+  it.
 
 ## Assignment-CSV naming (the wsitrain contract)
 
@@ -71,3 +84,17 @@ the already-annotated files on disk of their names.
 - `wsinsight` — the WSI pipeline the trained heads are deployed into, and the
   golden standard for package pins where repos disagree.
 - `sptxinsight`, `hplot`, `clawsight`, `clawpyter` — the rest of the stack.
+
+## Doc maintenance
+
+Three files, three audiences — keep a fact in exactly one of them:
+
+| File | Audience | Owns |
+| --- | --- | --- |
+| `README.md` | humans | the method, install, worked examples |
+| `SKILL.md` | an agent using the package | every CLI option, decision guide, troubleshooting |
+| `AGENTS.md` | an agent developing the package | repo layout, internal contracts, tests, lint baseline |
+
+Option defaults and the tissue/method lists appear in `SKILL.md`; when you
+change a CLI signature, update `SKILL.md` and only mention it here if the
+change carries a development constraint.

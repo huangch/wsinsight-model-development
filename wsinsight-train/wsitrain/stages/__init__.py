@@ -899,6 +899,7 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     import os
     import shutil
     import subprocess
+    import sys
 
     if _is_cellcls(cfg):
         return _train_cells(cfg, out)
@@ -965,16 +966,47 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
         "sys.exit(rc or 0)\n"
     )
     try:
-        subprocess.run(
+        # check=False: CellViT-plus-plus's wandb cleanup traceback at the very
+        # end of a successful training run returns exit=1, which would
+        # otherwise abort wsitrain's validate/export/report stages. We
+        # instead verify the actual training artifact (best checkpoint +
+        # scores) exists below and only then continue.
+        run = subprocess.run(
             [py, str(runner_path),
              str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
              "--config", str(cfg_path)],
-            cwd=cellvit, env=env, check=True)
+            cwd=cellvit, env=env, check=False, capture_output=True, text=True)
     finally:
         try:
             runner_path.unlink()
         except OSError:
             pass
+
+    # Locate the run dir produced by CellViT. ``--find-run-dir`` walks both
+    # <out>/logs/<tissue> and $CELLVIT_ROOT/logs_local; the freshly written
+    # model_best.pth is the source of truth for whether training actually
+    # worked.
+    run_dir = _find_run_dir(cfg, out, required=False)
+    checkpoint = (
+        Path(run_dir) / "checkpoints" / "model_best.pth"
+        if run_dir is not None else None
+    )
+    checkpoint_ok = checkpoint is not None and checkpoint.is_file()
+    if run.returncode != 0 and not checkpoint_ok:
+        # Training truly failed: surface CellViT's stderr verbatim so users
+        # see what went wrong.
+        sys.stderr.write(
+            "wsitrain train: CellViT exited with code "
+            f"{run.returncode} and no model_best.pth was produced.\n"
+        )
+        if run.stderr:
+            sys.stderr.write(run.stderr)
+        raise subprocess.CalledProcessError(
+            run.returncode, run.args, output=run.stdout)
+    if run.returncode != 0:
+        print(f"wsitrain train: CellViT exited with code {run.returncode}; "
+              "best checkpoint is on disk, continuing to validate/export.",
+              file=sys.stderr)
     if cfg.tune and cfg.tune > 0:
         from ..tuning import run_tune
         return run_tune(cfg, out, cellvit, base_config=cfg_path, py=py)

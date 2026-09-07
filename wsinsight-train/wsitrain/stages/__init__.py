@@ -555,6 +555,16 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     resolution). Tiles are cut on a stride grid; tiles with < min_cells or
     mostly-background mean RGB > bg_thresh are dropped. Coordinates in each CSV
     are tile-local pixels.
+
+    When ``cfg.stain_normalization`` is set, each slide's Macenko source matrix
+    is estimated once from a sample of the cells' tiles and the corresponding
+    PNGs are normalised in place. The slide-level source matrix is persisted to
+    ``<out>/stain/<sample_id>.npz`` so the export stage can emit a wsinsight
+    ``config.json`` that turns back the same deconvolution, and so manual
+    back-of-the-envelope checks can use it without re-deriving. Note that
+    ``infer.py`` re-estimates ``w_source`` from the query slide at inference
+    time, so this is informational rather than load-bearing for downstream
+    accuracy.
     """
     import pandas as pd
     from PIL import Image
@@ -562,11 +572,19 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
     if _is_cellcls(cfg):
         return {"skipped": "non-end2end model; cells are cut by the crop stage"}
 
+    import numpy as np
+    from .. import cellcls
+
     nuc_dir = paths.nuclei_dir(out, cfg.tissue)
     img_dir = paths.images_dir(out, cfg.tissue)
     lab_dir = paths.labels_dir(out, cfg.tissue)
     img_dir.mkdir(parents=True, exist_ok=True)
     lab_dir.mkdir(parents=True, exist_ok=True)
+    stain_dir = out / "stain"
+    if getattr(cfg, "stain_normalization", False):
+        stain_dir.mkdir(parents=True, exist_ok=True)
+    w_target = cellcls.stain_target_matrix() if getattr(cfg, "stain_normalization", False) else None
+
     stride = max(int(cfg.tile_px * (1 - cfg.overlap)), 1)
     written = 0
     from tqdm import tqdm
@@ -577,6 +595,53 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
         cells = pd.read_csv(csv)
         with SlideReader(s.he) as reader:
             h, w = reader.height, reader.width
+
+            # Per-slide Macenko source matrix, estimated from a sampled batch
+            # of tiles that satisfy the bg + min_cells filters. Done once per
+            # slide because the estimator is per-pixel and re-running it on
+            # every tile would dominate the stage cost.
+            w_source = None
+            if w_target is not None:
+                w_tiles: list[np.ndarray] = []
+                take = int(getattr(cfg, "norm_sample_size", 256))
+                # Coarse pass: walk the stride grid once, collect the cells'
+                # centre pixels in eligible tiles' coordinate range. This
+                # avoids the cost of MaterialiseFullImage on every tile.
+                for y0 in range(0, h - cfg.tile_px + 1, stride):
+                    for x0 in range(0, w - cfg.tile_px + 1, stride):
+                        sub = cells[(cells.x_px >= x0) & (cells.x_px < x0 + cfg.tile_px) &
+                                    (cells.y_px >= y0) & (cells.y_px < y0 + cfg.tile_px)]
+                        if len(sub) < cfg.min_cells:
+                            continue
+                        patch = reader.window(y0, x0, cfg.tile_px, cfg.tile_px)
+                        if float(patch.mean()) > cfg.bg_thresh:
+                            continue
+                        w_tiles.append(patch)
+                        if len(w_tiles) >= take:
+                            break
+                    if len(w_tiles) >= take:
+                        break
+                np.savez_compressed(
+                    stain_dir / f"{s.sample_id}.npz", source=np.zeros((0, 3)),
+                    source_count=0, target=w_target)
+                if not w_tiles:
+                    # All tiles rejected by background / min-cells. The
+                    # downstream training run will skip this slide anyway.
+                    continue
+                try:
+                    w_source = cellcls.estimate_stain_matrix(np.stack(w_tiles[:take]))
+                except Exception as exc:                # noqa: BLE001
+                    # Macenko is brittle on near-uniform tint (rare slides);
+                    # let training run unnormalised rather than abort the run.
+                    print(f"wsitrain tile: stain normalisation skipped for "
+                          f"{s.sample_id}: {exc}")
+                    w_source = None
+                if w_source is not None:
+                    np.savez_compressed(
+                        stain_dir / f"{s.sample_id}.npz",
+                        source=w_source, source_count=min(take, len(w_tiles)),
+                        target=w_target)
+
             for ti, y0 in enumerate(range(0, h - cfg.tile_px + 1, stride)):
                 for tj, x0 in enumerate(range(0, w - cfg.tile_px + 1, stride)):
                     # Cheap cell filter first: most tiles fail it, and decoding
@@ -588,6 +653,8 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
                     patch = reader.window(y0, x0, cfg.tile_px, cfg.tile_px)
                     if float(patch.mean()) > cfg.bg_thresh:
                         continue
+                    if w_source is not None:
+                        patch = cellcls._normalise(patch, w_source, w_target)
                     stem = f"{s.sample_id}_tile_{ti:05d}_{tj:05d}"
                     Image.fromarray(patch).save(img_dir / f"{stem}.png")
                     sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
@@ -828,6 +895,7 @@ def split(cfg, samples, out: Path) -> dict[str, Any]:
 def train(cfg, samples, out: Path) -> dict[str, Any]:
     """Render the fold config + invoke CellViT++. Locate the trainer via
     $CELLVIT_ROOT (the vendored CellViT-plus-plus checkout)."""
+    import json
     import os
     import shutil
     import subprocess
@@ -835,12 +903,37 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     if _is_cellcls(cfg):
         return _train_cells(cfg, out)
 
+    from .. import cellcls
+
     cellvit = os.environ.get("CELLVIT_ROOT")
     if not cellvit or not Path(cellvit).is_dir():
         raise RuntimeError("set $CELLVIT_ROOT to the CellViT-plus-plus checkout")
     cfg_path = paths.train_config_path(out, cfg.tissue, cfg.backbone, cfg.fold)
     if not cfg_path.exists():
         raise RuntimeError(f"missing train config: {cfg_path}")
+
+    # Persist per-dataset mean/std from the *training* PNG set so the
+    # ``export`` stage can mirror them into wsinsight's ``Normalize`` action.
+    # CellViT-plus-plus does not surface this number; without this snapshot
+    # the exported config falls back to the legacy [0.5, 0.5, 0.5] constant
+    # even when --stain-normalization was on, which mis-aligns inference.
+    # We write to a tissue-only path (``<out>/<tissue>.norm_stats.json``)
+    # because the end2end run-dir name is decided by the cellvit trainer,
+    # not by us.
+    stats_path = out / f"{cfg.tissue}.norm_stats.json"
+    images_dir = paths.images_dir(out, cfg.tissue)
+    if not stats_path.is_file() and images_dir.is_dir():
+        try:
+            mean, std = cellcls.compute_png_norm_stats(
+                images_dir, max_tiles=5000, seed=cfg.seed)
+            stats_path.write_text(
+                json.dumps({"mean": mean, "std": std}, indent=2))
+        except RuntimeError as exc:
+            # Empty tile dir means a previous stage dropped every slide
+            # (transfer QC, bg_thresh, etc). Leave the legacy [0.5]*3 in
+            # place rather than crashing the run.
+            print(f"wsitrain train: {exc} -- legacy [0.5]*3 fallback will be used")
+
     py = shutil.which("python3") or "python"
     env = subproc.child_env(cellvit)
     subprocess.run([py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
@@ -955,21 +1048,40 @@ def export(cfg, samples, out: Path) -> dict[str, Any]:
 
     label_map = load_label_map(paths.label_map_path(out, cfg.tissue))
     class_names = [label_map[i] for i in sorted(label_map)]
+
+    # Compute per-dataset mean/std from the PNG tiles the trainer will see,
+    # not the hard-coded [0.5, 0.5, 0.5] the legacy export shipped. This
+    # keeps inference-time transform in lockstep with whatever augmentation
+    # pipeline produced the tiles (raw vs Macenko-normalised, etc.).
+    stats_path = out / f"{cfg.tissue}.norm_stats.json"
+    if stats_path.is_file():
+        import json as _json
+        stats = _json.loads(stats_path.read_text())
+        mean = stats["mean"]
+        std = stats["std"]
+    else:
+        # Legacy export fallback: kept identical to the original cellvit
+        # shipped config so an export done before --stain-normalization was
+        # wired still produces a model that wsinsight can load.
+        mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
+
     config = {
         "spec_version": "1.0", "architecture": "cellvit",
         "num_classes": len(class_names), "class_names": class_names,
         "patch_size_pixels": cfg.tile_px, "halo_size_pixels": 0,
         "spacing_um_px": cfg.mpp,
         # Required by wsinsight's model-config schema; mirrors the shipped
-        # zoo/huangch/CellViT-SAM-H-x40 config.
+        # zoo/huangch/CellViT-SAM-H-x40 config. Mean/std now come from the
+        # training tiles rather than the [0.5, 0.5, 0.5] constant below.
         "transform": [
             {"name": "Resize", "arguments": {"size": cfg.tile_px}},
             {"name": "ToTensor"},
             {"name": "Normalize",
-             "arguments": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
+             "arguments": {"mean": mean, "std": std}},
         ],
         "backbone": cfg.backbone,
-        "stain_normalization": False, "object_based": True,
+        "stain_normalization": bool(getattr(cfg, "stain_normalization", False)),
+        "object_based": True,
         "mixed_precision": False, "object_detection": {"name": "end2end"},
     }
     (dst / "config.json").write_text(json.dumps(config, indent=2))

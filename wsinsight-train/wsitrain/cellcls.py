@@ -255,6 +255,37 @@ def compute_norm_stats(files: list[Path], max_cells: int = 50000,
     return mean.tolist(), std.tolist()
 
 
+def compute_png_norm_stats(images_dir: Path, max_tiles: int = 5000,
+                           seed: int = 0) -> tuple[list[float], list[float]]:
+    """Per-channel mean/std over a sample of TRAINING PNG tiles.
+
+    Used by the end2end (CellViT) export path so the wsinsight ``Normalize``
+    action in the produced ``config.json`` matches the augmentation pipeline
+    that wrote the tiles, regardless of whether Macenko stain normalization
+    was applied at the tile stage or left as-is. The constant ``[0.5]*3``
+    fallback in the legacy export is replaced with this.
+    """
+    import numpy as np
+    from PIL import Image
+
+    if not images_dir.is_dir():
+        raise RuntimeError(f"tile image directory not found: {images_dir}")
+    paths = sorted(images_dir.glob("*.png"))
+    if not paths:
+        raise RuntimeError(f"no PNG tiles under {images_dir} (did tile stage run?)")
+    rng = np.random.default_rng(seed)
+    take = min(int(max_tiles), len(paths))
+    idx = np.sort(rng.choice(len(paths), size=take, replace=False))
+    chunks = []
+    for i in idx:
+        with Image.open(paths[int(i)]) as im:
+            chunks.append(np.asarray(im, dtype="float64") / 255.0)
+    stacked = np.concatenate(chunks, axis=0)
+    mean = stacked.mean(axis=(0, 1, 2))
+    std = stacked.std(axis=(0, 1, 2))
+    return mean.tolist(), std.tolist()
+
+
 def train_classifier(train_files, val_files, *, architecture: str, patch_px: int,
                      num_classes: int, mean, std, out_dir: Path,
                      epochs: int = 50, batch_size: int = 128, lr: float = 1e-4,

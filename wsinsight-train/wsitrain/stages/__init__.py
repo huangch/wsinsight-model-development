@@ -936,9 +936,45 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
 
     py = shutil.which("python3") or "python"
     env = subproc.child_env(cellvit)
-    subprocess.run([py, str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
-                    "--config", str(cfg_path)],
-                   cwd=cellvit, env=env, check=True)
+    # CellViT-plus-plus' `experiment_cell_classifier.py` passes
+    # ``wandb.Settings(start_method="fork")`` from a time when wandb
+    # accepted that kwarg; modern wandb (>=0.20) refuses it with a Pydantic
+    # ``Extra inputs are not permitted`` error. Patch the Settings model in
+    # the child process before any CellViT import so the kwarg is accepted
+    # and ignored. ``runpy.run_path`` is used rather than direct invocation so
+    # the caller's argv becomes ``[script_path, *rest]``; the inner script's
+    # argparse sees --config naturally.
+    #
+    # The runner is written next to $OUT (and cleaned up after) rather than
+    # passed via ``python -c`` because ``python -c "...;def f(...): ..."``
+    # on one physical line is rejected by the parser: ``import X;def Y``
+    # is read as ``import X, def Y(...)``.
+    runner_path = out / "_wsitrain_cellvit_runner.py"
+    runner_path.write_text(
+        "import sys\n"
+        "import wandb\n"
+        "_orig_settings = wandb.Settings\n"
+        "def _patched(*a, **kw):\n"
+        "    kw.pop('start_method', None)\n"
+        "    return _orig_settings(*a, **kw)\n"
+        "wandb.Settings = _patched\n"
+        "import runpy\n"
+        "_script = sys.argv[1]\n"
+        "sys.argv = [_script] + sys.argv[2:]\n"
+        "rc = runpy.run_path(_script, run_name='__main__')\n"
+        "sys.exit(rc or 0)\n"
+    )
+    try:
+        subprocess.run(
+            [py, str(runner_path),
+             str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
+             "--config", str(cfg_path)],
+            cwd=cellvit, env=env, check=True)
+    finally:
+        try:
+            runner_path.unlink()
+        except OSError:
+            pass
     if cfg.tune and cfg.tune > 0:
         from ..tuning import run_tune
         return run_tune(cfg, out, cellvit, base_config=cfg_path, py=py)

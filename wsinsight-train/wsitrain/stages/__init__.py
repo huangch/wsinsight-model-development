@@ -900,6 +900,7 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
     import shutil
     import subprocess
     import sys
+    from collections import deque
 
     if _is_cellcls(cfg):
         return _train_cells(cfg, out)
@@ -971,11 +972,41 @@ def train(cfg, samples, out: Path) -> dict[str, Any]:
         # otherwise abort wsitrain's validate/export/report stages. We
         # instead verify the actual training artifact (best checkpoint +
         # scores) exists below and only then continue.
-        run = subprocess.run(
+        #
+        # Streamed rather than captured: CellViT's tqdm bars go to stderr, and
+        # capture_output=True held them in a pipe until the process exited, so
+        # hours of training looked like a hang. Read in raw chunks, not lines:
+        # tqdm redraws with \r and never emits \n until a bar completes.
+        proc = subprocess.Popen(
             [py, str(runner_path),
              str(Path(cellvit) / "cellvit" / "train_cell_classifier_head.py"),
              "--config", str(cfg_path)],
-            cwd=cellvit, env=env, check=False, capture_output=True, text=True)
+            cwd=cellvit, env=env, bufsize=0,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        tail = deque(maxlen=400)
+        pending = ""
+        fd = proc.stdout.fileno()
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            text = chunk.decode("utf-8", "replace")
+            sys.stderr.write(text)
+            sys.stderr.flush()
+            pending += text
+            while True:
+                cut = max(pending.rfind("\n"), pending.rfind("\r"))
+                if cut < 0:
+                    break
+                tail.extend(pending[:cut].splitlines())
+                pending = pending[cut + 1:]
+                break
+        proc.stdout.close()
+        if pending:
+            tail.append(pending)
+        run = subprocess.CompletedProcess(
+            proc.args, proc.wait(),
+            stdout="\n".join(tail), stderr="\n".join(tail))
     finally:
         try:
             runner_path.unlink()

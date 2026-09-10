@@ -154,24 +154,22 @@ def test_split_is_non_empty_on_both_sides(pipeline):
 
 def test_split_covers_every_slide(cfg, pipeline):
     sd = paths.splits_dir(cfg.output, cfg.tissue, cfg.fold)
-    train = sd.joinpath("train.csv").read_text().splitlines()
-    val = sd.joinpath("val.csv").read_text().splitlines()
+    train, val = splits.read_split(sd)
     assert {splits.sample_tag(t) for t in val} == {splits.sample_tag(t) for t in train}
 
 
 def test_split_files_have_no_blank_entries(cfg, pipeline):
     sd = paths.splits_dir(cfg.output, cfg.tissue, cfg.fold)
-    for name in ("train.csv", "val.csv"):
-        lines = sd.joinpath(name).read_text().splitlines()
-        assert all(line.strip() for line in lines)
+    train, val = splits.read_split(sd)
+    assert all(train) and all(val)
 
 
 def test_split_entries_resolve_to_real_files(cfg, pipeline):
     sd = paths.splits_dir(cfg.output, cfg.tissue, cfg.fold)
     lab = paths.labels_dir(cfg.output, cfg.tissue)
     img = paths.images_dir(cfg.output, cfg.tissue)
-    for name in ("train.csv", "val.csv"):
-        for stem in sd.joinpath(name).read_text().splitlines():
+    for stems in splits.read_split(sd):
+        for stem in stems:
             assert (lab / f"{stem}.csv").exists()
             assert (img / f"{stem}.png").exists()
 

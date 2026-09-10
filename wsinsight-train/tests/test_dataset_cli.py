@@ -171,6 +171,24 @@ def test_write_split_creates_both_files(tmp_path):
     assert (tmp_path / "sp" / "val.csv").read_text() == "b\n"
 
 
+def test_write_split_preserves_commas_in_stems(tmp_path):
+    """Comma-laden stems (Xenium panel names like ``...__Cancer, pre-designed + add-on
+    panel_tile_...``) used to be truncated by CellViT's ``csv.reader`` reader
+    because the splits file was emitting one raw stem per line. csv.writer
+    quotes those fields so the round-trip keeps the full string."""
+    stems = [
+        "breast__panel_tile_00007_00004",
+        "breast__Cancer, pre-designed + add-on panel_tile_00031_00010",
+        'breast__Panel "v2" cohort_tile_00001_00002',
+    ]
+    res = splits.SplitResult(train=stems[:2], val=stems[2:], mode="m",
+                             n_slides=2, train_slides=[], val_slides=[])
+    splits.write_split(res, tmp_path / "sp")
+    train, val = splits.read_split(tmp_path / "sp")
+    assert train == stems[:2]
+    assert val == stems[2:]
+
+
 # --------------------------------------------------------------------------
 # weights
 # --------------------------------------------------------------------------

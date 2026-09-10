@@ -11,6 +11,7 @@ Two modes:
 """
 from __future__ import annotations
 
+import csv
 import random
 import re
 from collections import defaultdict
@@ -181,5 +182,32 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
 def write_split(res: SplitResult, out_dir: Path) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # CellViT-plus-plus reads the split filelists via csv.reader and only keeps
+    # row[0]. Stems containing commas (Xenium-style panel names like
+    # "...__Cancer, pre-designed + add-on panel_tile_...") would be truncated
+    # on the first comma and silently drop out of train/val, leaving the
+    # dataset empty. csv.writer quotes those fields; csv-reader round-trips
+    # them cleanly, and a stem with no special characters stays unquoted.
+    # lineterminator="\n" keeps the existing line-per-row layout and avoids
+    # having two line-ending styles on disk; tests that already splitlines()
+    # the file therefore keep working for simple stems.
     for name, rows in (("train.csv", res.train), ("val.csv", res.val)):
-        (out_dir / name).write_text("".join(f"{r}\n" for r in rows))
+        with (out_dir / name).open("w", newline="") as fh:
+            w = csv.writer(fh, lineterminator="\n")
+            w.writerows((row,) for row in rows)
+
+
+def read_split(out_dir: Path) -> tuple[list[str], list[str]]:
+    """Read train.csv / val.csv back from disk using csv.reader.
+
+    Centralises the on-disk format so callers (and tests) don't have to know
+    whether a stem was quoted; the round-trip is identical to write_split.
+    """
+    out_dir = Path(out_dir)
+
+    def _read(name: str) -> list[str]:
+        path = out_dir / name
+        with path.open(newline="") as fh:
+            return [row[0] for row in csv.reader(fh) if row]
+
+    return _read("train.csv"), _read("val.csv")

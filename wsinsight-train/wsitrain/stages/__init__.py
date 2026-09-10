@@ -575,51 +575,25 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
 
 
 
-def tile(cfg, samples, out: Path) -> dict[str, Any]:
-    """Emit tile_px PNG + sibling x,y,class_int CSV (legacy CellViT contract).
+def _tile_one_slide(cfg, s, *, out, nuc_dir, img_dir, lab_dir, stain_dir, w_target):
+    """Handle a single slide from cells CSV to PNG+label tiles.
 
-    Cells live in per-sample nuclei CSVs (x_px,y_px,class_int at H&E pixel
-    resolution). Tiles are cut on a stride grid; tiles with < min_cells or
-    mostly-background mean RGB > bg_thresh are dropped. Coordinates in each CSV
-    are tile-local pixels.
-
-    When ``cfg.stain_normalization`` is set, each slide's Macenko source matrix
-    is estimated once from a sample of the cells' tiles and the corresponding
-    PNGs are normalised in place. The slide-level source matrix is persisted to
-    ``<out>/stain/<sample_id>.npz`` so the export stage can emit a wsinsight
-    ``config.json`` that turns back the same deconvolution, and so manual
-    back-of-the-envelope checks can use it without re-deriving. Note that
-    ``infer.py`` re-estimates ``w_source`` from the query slide at inference
-    time, so this is informational rather than load-bearing for downstream
-    accuracy.
+    Returned dict: keys "sid", "n", "err". Factored out of tile() so a
+    multiprocessing.Pool can map slides across cores.
     """
     import pandas as pd
     from PIL import Image
 
-    if _is_cellcls(cfg):
-        return {"skipped": "non-end2end model; cells are cut by the crop stage"}
-
     import numpy as np
     from .. import cellcls
 
-    nuc_dir = paths.nuclei_dir(out, cfg.tissue)
-    img_dir = paths.images_dir(out, cfg.tissue)
-    lab_dir = paths.labels_dir(out, cfg.tissue)
-    img_dir.mkdir(parents=True, exist_ok=True)
-    lab_dir.mkdir(parents=True, exist_ok=True)
-    stain_dir = out / "stain"
-    if getattr(cfg, "stain_normalization", False):
-        stain_dir.mkdir(parents=True, exist_ok=True)
-    w_target = cellcls.stain_target_matrix() if getattr(cfg, "stain_normalization", False) else None
-
+    csv = nuc_dir / f"{s.sample_id}.csv"
+    if not csv.exists():        # dropped by the transfer QC
+        return {"sid": s.sample_id, "n": 0, "err": None}
+    cells = pd.read_csv(csv)
     stride = max(int(cfg.tile_px * (1 - cfg.overlap)), 1)
     written = 0
-    from tqdm import tqdm
-    for s in tqdm(samples, desc="tile", unit="slide", ascii=" =", dynamic_ncols=True):
-        csv = nuc_dir / f"{s.sample_id}.csv"
-        if not csv.exists():        # dropped by the transfer QC
-            continue
-        cells = pd.read_csv(csv)
+    try:
         with SlideReader(s.he) as reader:
             h, w = reader.height, reader.width
 
@@ -654,7 +628,7 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
                 if not w_tiles:
                     # All tiles rejected by background / min-cells. The
                     # downstream training run will skip this slide anyway.
-                    continue
+                    return {"sid": s.sample_id, "n": 0, "err": None}
                 try:
                     w_source = cellcls.estimate_stain_matrix(np.stack(w_tiles[:take]))
                 except Exception as exc:                # noqa: BLE001
@@ -672,7 +646,7 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
             for ti, y0 in enumerate(range(0, h - cfg.tile_px + 1, stride)):
                 for tj, x0 in enumerate(range(0, w - cfg.tile_px + 1, stride)):
                     # Cheap cell filter first: most tiles fail it, and decoding
-                    # their pixels only to discard them dominates the stage.
+                    # their pixels only to discard them dominates the stage cost.
                     sub = cells[(cells.x_px >= x0) & (cells.x_px < x0 + cfg.tile_px) &
                                 (cells.y_px >= y0) & (cells.y_px < y0 + cfg.tile_px)]
                     if len(sub) < cfg.min_cells:
@@ -687,8 +661,98 @@ def tile(cfg, samples, out: Path) -> dict[str, Any]:
                     sub.assign(x=sub.x_px - x0, y=sub.y_px - y0)[["x", "y", "class_int"]].to_csv(
                         lab_dir / f"{stem}.csv", header=False, index=False)
                     written += 1
-    return {"tiles": written}
+    except Exception as exc:                                # noqa: BLE001
+        # Surface worker errors back to the dispatcher rather than silencing
+        # them in a child process; the parent loop re-raises to fail-fast.
+        return {"sid": s.sample_id, "n": written,
+                "err": f"{type(exc).__name__}: {exc}"}
+    return {"sid": s.sample_id, "n": written, "err": None}
 
+
+def _tile_one_slide_star(args):
+    """Picklable starmap target.
+
+    On Linux, fork(2) means processes inherit the parent's imported modules
+    without re-running import; the only thing crossing the pickle boundary
+    is a single tuple, so this single-arg wrapper is enough.
+    """
+    cfg, s, kwargs = args
+    return _tile_one_slide(cfg, s, **kwargs)
+
+
+def tile(cfg, samples, out:
+    Path) -> dict[str, Any]:
+    """Emit tile_px PNG + sibling x,y,class_int CSV (legacy CellViT contract).
+
+    Cells live in per-sample nuclei CSVs (x_px,y_px,class_int at H&E pixel
+    resolution). Tiles are cut on a stride grid; tiles with < min_cells or
+    mostly-background mean RGB > bg_thresh are dropped. Coordinates in each CSV
+    are tile-local pixels.
+
+    When ``cfg.stain_normalization`` is set, each slide's Macenko source matrix
+    is estimated once from a sample of the cells' tiles and the corresponding
+    PNGs are normalised in place. The slide-level source matrix is persisted to
+    ``<out>/stain/<sample_id>.npz`` so the export stage can emit a wsinsight
+    ``config.json`` that turns back the same deconvolution, and so manual
+    back-of-the-envelope checks can use it without re-deriving. Note that
+    ``infer.py`` re-estimates ``w_source`` from the query slide at inference
+    time, so this is informational rather than load-bearing for downstream
+    accuracy.
+
+    Multi-process: set ``cfg.tile_workers`` > 1 to shard slides across cores.
+    Each worker handles a single slide end-to-end and slides are independent,
+    so there is no shared state to coordinate; the multiprocessing.Pool fork
+    inherits the parent's already-imported modules without re-importing numpy /
+    PIL / tifffile / zarr.
+    """
+    if _is_cellcls(cfg):
+        return {"skipped": "non-end2end model; cells are cut by the crop stage"}
+
+    # Imports inside the body: kept here so they don't run for cellcls paths,
+    # and so the worker fork inherits them.
+    from .. import cellcls
+
+    nuc_dir = paths.nuclei_dir(out, cfg.tissue)
+    img_dir = paths.images_dir(out, cfg.tissue)
+    lab_dir = paths.labels_dir(out, cfg.tissue)
+    img_dir.mkdir(parents=True, exist_ok=True)
+    lab_dir.mkdir(parents=True, exist_ok=True)
+    stain_dir = out / "stain"
+    if getattr(cfg, "stain_normalization", False):
+        stain_dir.mkdir(parents=True, exist_ok=True)
+    w_target = cellcls.stain_target_matrix() if getattr(cfg, "stain_normalization", False) else None
+
+    workers = max(int(getattr(cfg, "tile_workers", 1) or 1), 1)
+    if workers == 1:
+        written_total = 0
+        from tqdm import tqdm
+        for s in tqdm(samples, desc="tile", unit="slide", ascii=" =", dynamic_ncols=True):
+            res = _tile_one_slide(
+                cfg, s, out=out, nuc_dir=nuc_dir, img_dir=img_dir,
+                lab_dir=lab_dir, stain_dir=stain_dir, w_target=w_target)
+            if res["err"]:
+                raise RuntimeError(f"tile {s.sample_id} failed: {res['err']}")
+            written_total += res["n"]
+        return {"tiles": written_total}
+
+    # Fan-out: pool of workers. Each receives the same path arguments (the
+    # underlying filesystem is the shared output dir). SlideReader does its
+    # own zarr cache inside the worker, so there is no cross-process cache
+    # sharing -- the per-reader LRU we added earlier still helps because it
+    # amortises a slide's repeated window reads inside one worker.
+    import multiprocessing as mp
+    ctx = mp.get_context("fork")
+    args = [(cfg, s, dict(out=out, nuc_dir=nuc_dir, img_dir=img_dir,
+                          lab_dir=lab_dir, stain_dir=stain_dir,
+                          w_target=w_target))
+            for s in samples]
+    written_total = 0
+    with ctx.Pool(processes=workers) as pool:
+        for res in pool.imap_unordered(_tile_one_slide_star, args):
+            if res["err"]:
+                raise RuntimeError(f"tile {res['sid']} failed: {res['err']}")
+            written_total += res["n"]
+    return {"tiles": written_total}
 
 
 def _is_cellcls(cfg) -> bool:

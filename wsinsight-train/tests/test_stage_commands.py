@@ -90,7 +90,7 @@ EXPECTED_FLAGS = {
                 "--stardist-normalization-pmin", "--stardist-normalization-pmax"},
     "transfer": {"--transform", "--match-radius-px", "--min-match-rate",
                  "--drop-labels", "--task", "--mpp"},
-    "tile": {"--min-cells", "--bg-thresh", "--overlap", "--tile-px"},
+    "tile": {"--min-cells", "--bg-thresh", "--overlap", "--tile-px", "--tile-workers"},
     "crop": {"--object-detection", "--architecture", "--patch-size-pixels",
              "--patch-spacing-um-px", "--stain-normalization",
              "--no-stain-normalization", "--norm-sample-size",

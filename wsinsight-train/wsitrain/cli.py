@@ -224,6 +224,10 @@ def _add_tile(p: argparse.ArgumentParser) -> None:
                    help="drop tiles whose mean RGB exceeds this")
     p.add_argument("--overlap", type=float, default=None,
                    help="tile overlap fraction (0-1)")
+    p.add_argument("--tile-workers", type=int, default=None,
+                   help="OS processes to use for the tile stage (1 = serial). "
+                        "Each worker handles one slide end-to-end; slides are "
+                        "independent so there is no shared state to coordinate.")
 
 
 def _add_split(p: argparse.ArgumentParser) -> None:

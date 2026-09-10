@@ -35,6 +35,7 @@ mpp: 0.25
 min_cells: 5
 bg_thresh: 240.0
 overlap: 0.0
+tile_workers: 1       # 1 = serial; >1 fans out per-slide across cores
 
 # splits / weights
 val_frac: 0.20

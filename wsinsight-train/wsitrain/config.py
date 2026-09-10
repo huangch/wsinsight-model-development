@@ -59,6 +59,10 @@ class RunConfig:
     min_cells: int = 5
     bg_thresh: float = 240.0
     overlap: float = 0.0
+    # Number of OS processes to use for the tile stage. Each worker handles
+    # one slide end-to-end; 1 keeps the original serial behaviour, >1 spreads
+    # slides across cores. The segment stage is not affected.
+    tile_workers: int = 1
 
     # splits / weights
     val_frac: float = 0.20

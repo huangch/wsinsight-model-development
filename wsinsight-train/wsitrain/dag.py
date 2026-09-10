@@ -43,7 +43,8 @@ def _chunked(items, k):
     return [c for c in out if c]
 
 
-def _fan_out_segment(cfg, samples, out, gpu_ids):
+def _fan_out_segment(cfg, samples, out, gpu_ids,
+                     per_slide_timeout_s: int = 1800):
     """Run the segment stage in parallel across ``len(gpu_ids)`` GPUs.
 
     Each worker is a child ``wsitrain segment`` subprocess pinned to one
@@ -52,9 +53,14 @@ def _fan_out_segment(cfg, samples, out, gpu_ids):
     ``<output>/masks/<tissue>/<sample>.npy`` so the next stage (transfer)
     picks them up transparently. Returns the merged ``{sample_id: nuclei_count}``
     dict that the regular ``segment`` returns.
+
+    ``per_slide_timeout_s`` bounds each worker at (N slides in chunk *
+    per_slide_timeout_s) seconds. A hung worker (e.g. deadlocked cellpose
+    TF init on a shared host) is killed and the failure is reported, so the
+    remaining fast workers do not block forever.
     """
     chunks = _chunked([s.sample_id for s in samples], len(gpu_ids))
-    procs = []
+    workers = []
     for gid, chunk in zip(gpu_ids, chunks):
         if not chunk:
             continue
@@ -72,23 +78,65 @@ def _fan_out_segment(cfg, samples, out, gpu_ids):
                "--gpus", gid,
                "--samples", *chunk,
                "--force"]
-        print(f"[dag] fan-out segment -> cuda:{gid} for {len(chunk)} slide(s): {chunk}")
-        # Stream the worker's stderr to the parent's stderr so its traceback
-        # is visible immediately if it fails. stdout is buffered.
-        procs.append((gid, subprocess.Popen(cmd, env=env,
-                                            stdout=subprocess.DEVNULL,
-                                            stderr=subprocess.PIPE)))
+        deadline = per_slide_timeout_s * len(chunk)
+        print(f"[dag] fan-out segment -> cuda:{gid} for {len(chunk)} slide(s); "
+              f"timeout {deadline}s")
+        # Stream stderr line-by-line so we see hangs as they happen. stdout is
+        # buffered (segment uses tqdm which redraws via \r, see tile stage).
+        workers.append((gid, chunk, deadline,
+                        subprocess.Popen(cmd, env=env,
+                                         stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT,
+                                         bufsize=0)))
     counts = {}
-    for gid, p in procs:
-        stderr_out, _ = p.communicate()
-        if p.returncode != 0:
-            tail = stderr_out.decode("utf-8", "replace").splitlines()[-30:] if stderr_out else []
-            sys.stderr.write(
-                f"[dag] segment worker on cuda:{gid} failed "
-                f"(exit={p.returncode}); last 30 lines of stderr:\n"
-                + "\n".join(tail) + "\n")
+    import select
+    for gid, chunk, deadline, proc in workers:
+        tail_lines: list[str] = []
+        exited = False
+        # Read output as the process runs so the operator sees progress.
+        import time as _time
+        start = _time.time()
+        fd = proc.stdout.fileno()
+        os.set_blocking(fd, False)
+        buf = b""
+        while True:
+            if _time.time() - start > deadline:
+                proc.kill()
+                proc.wait()
+                raise SystemExit(
+                    f"[dag] segment worker on cuda:{gid} exceeded "
+                    f"{deadline}s timeout; killed. last output: "
+                    + "\n".join(tail_lines[-10:]))
+            if proc.poll() is not None:
+                exited = True
+                # Drain remaining stdout.
+                remainder = proc.stdout.read()
+                if remainder:
+                    for ln in remainder.decode("utf-8", "replace").splitlines():
+                        tail_lines.append(ln)
+                break
+            r, _, _ = select.select([fd], [], [], 1.0)
+            if not r:
+                continue
+            try:
+                chunk_bytes = os.read(fd, 65536)
+            except BlockingIOError:
+                continue
+            if not chunk_bytes:
+                continue
+            buf += chunk_bytes
+            while b"\n" in buf:
+                line, buf = buf.split(b"\n", 1)
+                decoded = line.decode("utf-8", "replace")
+                # Mirror to parent's stderr so the operator sees it live.
+                sys.stderr.write(decoded + "\n")
+                sys.stderr.flush()
+                tail_lines.append(decoded)
+        if proc.returncode != 0:
             raise SystemExit(
-                f"[dag] segment worker on cuda:{gid} exited with code {p.returncode}; aborting.")
+                f"[dag] segment worker on cuda:{gid} exited with code "
+                f"{proc.returncode} (after {len(tail_lines)} log lines); aborting. "
+                f"last output:\n" + "\n".join(tail_lines[-10:]))
     # Read the produced masks back to compute the per-sample nuclei count
     # (segment normally returns this; we reproduce it here so the manifest
     # gets the same shape).

@@ -40,8 +40,14 @@
 #   NORM_SAMPLE_SIZE  cells per slide used to fit the slide-level Macenko
 #              source matrix (default 256; consumed on both paths when
 #              STAIN_NORMALIZATION=1).
-#   GPUS       device index (default auto). 'cpu' segments without a GPU but
-#              cannot train, so it needs RUN_SKIP to stop before split.
+#   GPUS       device selection (Docker-style: 'all' = every visible CUDA
+#              device; '0' or '0,1' for an explicit subset; 'cpu' = skip GPU).
+#              'all' is the default and triggers multi-GPU fan-out for the
+#              segment stage when --nuclei-source=he-mask is also set. With
+#              the default --nuclei-source=xenium-coords the segment stage
+#              is skipped, so --gpus only matters for train/validate.
+#              'cpu' segments without a GPU but cannot train, so it needs
+#              RUN_SKIP to stop before the split stage.
 #   CELLPOSE_BATCH_SIZE  cellpose batch size (default 16). Only forwarded
 #                          when SEGMENTER=cellpose; no effect on stardist.
 #   ENVBIN     conda env bin holding wsitrain + torch
@@ -85,7 +91,7 @@ SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"
 TUNE="${TUNE:-0}"
-GPUS="${GPUS:-auto}"
+GPUS="${GPUS:-all}"
 
 STAGE_FLAGS=()
 [ -n "${RUN_SKIP:-}" ] && STAGE_FLAGS=(--run-skip $RUN_SKIP)

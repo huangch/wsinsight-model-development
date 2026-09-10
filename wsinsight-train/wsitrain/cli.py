@@ -77,12 +77,22 @@ def _stages(values) -> list[str]:
 
 
 def _split_csv_list(values) -> list[str] | None:
-    """Same flatten-to-list shape as ``_stages`` but no enum check."""
+    """Same flatten-to-list shape as ``_stages`` but no enum check.
+
+    Note: previously this split on ``,`` to allow `--samples a,b` shorthand.
+    That broke slide_id values that legitimately contain commas (the
+    Xenium panel ``Cancer, pre-designed`` family); ``argparse`` with
+    ``nargs="+"`` already accepts a comma-separated arg, so the extra
+    split only adds incorrect behaviour. We now pass values through
+    verbatim after stripping whitespace.
+    """
     if values is None:
         return None
     out: list[str] = []
     for v in values:
-        out += [part.strip() for part in str(v).split(",") if part.strip()]
+        s = str(v).strip()
+        if s:
+            out.append(s)
     return out
 
 
@@ -181,7 +191,13 @@ def _add_model_id(p: argparse.ArgumentParser) -> None:
 
 
 def _add_gpus(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--gpus", default=None, help="device index, or 'cpu' to disable")
+    p.add_argument("--gpus", default=None,
+                   help="GPU selection (Docker-style). 'all' (default) uses "
+                        "every visible CUDA device for the segment stage and "
+                        "the first device for train/validate. '0,1' selects "
+                        "a specific subset. 'cpu' disables GPU; train/validate "
+                        "are then skipped via --run-skip. See _gpu_id() in "
+                        "configrender.py for the exact resolution rules.")
 
 
 def _add_segment(p: argparse.ArgumentParser) -> None:
@@ -331,11 +347,13 @@ _OVERRIDE_FIELDS = (
     "min_match_rate", "cellpose_batch_size", "cellpose_flow_threshold",
     "cellpose_model", "stardist_model", "stardist_model_dir", "stardist_cpu",
     "diameter", "tile_px", "mpp", "min_cells", "bg_thresh", "overlap",
+    "tile_workers",
     "val_frac", "by_slide", "seed", "weight_cap", "backbone", "fold",
     "markers_csv", "top_k_markers",
     "object_detection", "architecture", "patch_size_pixels",
     "patch_spacing_um_px", "stain_normalization", "norm_sample_size",
     "stardist_normalization_pmin", "stardist_normalization_pmax",
+    "nuclei_source",
     "epochs", "batch_size", "lr", "weight_decay", "pretrained", "num_workers",
 )
 

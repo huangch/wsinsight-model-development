@@ -40,9 +40,28 @@ def _backbone_weights(cellvit: str, backbone: str) -> str:
 
 
 def _gpu_id(cfg) -> str:
+    """Resolve --gpus into a comma-separated list of CUDA device ids.
+
+    Accepted spellings (Docker-style):
+        "all"                    -> torch.cuda.device_count() devices
+        "0", "0,1", "1,3,5"      -> explicit list
+        "cpu","none","false","no" -> fail-fast (train stage requires a GPU)
+
+    Note: "auto" was removed; "all" is the Docker-style synonym.
+    """
     raw = str(cfg.gpus).strip().lower()
-    if raw in {"", "auto", "auto-gpu", "all"}:
-        return "0"
+    if raw == "all" or raw == "":
+        try:
+            import torch
+            n = torch.cuda.device_count() if torch.cuda.is_available() else 0
+        except ImportError:
+            n = 0
+        if n == 0:
+            raise SystemExit(
+                "--gpus all requested but no CUDA devices are visible. Pass "
+                "--gpus cpu (and --run-skip train validate export) if the host "
+                "has no GPU, or check the driver install.")
+        return ",".join(str(i) for i in range(n))
     if raw in {"cpu", "none", "false", "no"}:
         # The template renders this into `gpu:`, a CUDA device index. Returning
         # "0" here would train on the GPU the same flag just told segment to
@@ -51,10 +70,21 @@ def _gpu_id(cfg) -> str:
             f"--gpus {cfg.gpus!r} turns the GPU off, but CellViT training needs "
             "a CUDA device. Pass --gpus <index> (e.g. --gpus 0), or stop before "
             "the split stage with `--run-skip split train validate export`.")
+    # "0,1" / "0,1,3" etc -- validate each token is an integer.
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
     try:
-        return str(int(raw.split(",")[0]))
+        ids = [str(int(p)) for p in parts]
     except ValueError:
-        return "0"
+        raise SystemExit(
+            f"--gpus {cfg.gpus!r}: expected 'all', 'cpu', or a comma-separated "
+            "list of device indices like '0' or '0,1'.")
+    return ",".join(ids)
+
+
+def _gpu_ids(cfg) -> list[str]:
+    """[_gpu_id(cfg)] split on ','. Empty -> []. Single '0' -> ['0']."""
+    s = _gpu_id(cfg)
+    return s.split(",") if s else []
 
 
 def render_config(cfg, out: Path, *, drop_rate: float = 0.1, lr: float = 0.000075,

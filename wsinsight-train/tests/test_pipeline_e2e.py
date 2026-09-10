@@ -58,6 +58,9 @@ def dataset(tmp_path):
 
 @pytest.fixture
 def cfg(dataset, tmp_path):
+    # The default --gpus=all fails fast on hosts without CUDA. The e2e
+    # fixture drives a Fake segmenter that does not touch a GPU, so any
+    # concrete device id works; pick "0" so configrender does not probe.
     return build_config(dataset, "breast", tmp_path / "out",
                         overrides={"task": "pantissue", "transform": "none",
                                    "mpp": 1.0, "match_radius_px": 2,
@@ -65,6 +68,7 @@ def cfg(dataset, tmp_path):
                                    "min_cells": 1, "bg_thresh": 250.0,
                                    "overlap": 0.0, "val_frac": 0.5,
                                    "by_slide": False, "segmenter": "fake",
+                                   "gpus": "0",
                                    # e2e fixture drives a Fake segmenter and
                                    # exercises the he-mask pipeline; pin
                                    # here so the global default flip to

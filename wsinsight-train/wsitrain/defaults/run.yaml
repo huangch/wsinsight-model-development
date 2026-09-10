@@ -53,7 +53,13 @@ weight_cap: 10.0
 backbone: SAM-H-x40
 fold: fold_0
 task: sthelar_full
-gpus: auto
+# GPU selection (Docker-style):
+#   all  -> torch.cuda.device_count() visible devices (segment fans out,
+#           one CellViT subprocess per device, train picks the first).
+#   0    -> only device 0 (no fan-out; useful when only one GPU is wired).
+#   0,1  -> only those two devices (explicit subset).
+#   cpu  -> run on CPU; train/validate are skipped via --run-skip.
+gpus: all
 tune: 0                      # 0 = single run; N = auto-tune iterations
 
 # markers

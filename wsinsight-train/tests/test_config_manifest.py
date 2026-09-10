@@ -76,12 +76,26 @@ def test_default_drop_labels_survive_a_manifest_reload(tmp_path):
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("raw,expected", [
-    ("auto", "0"), ("", "0"), ("all", "0"),
-    ("0", "0"), ("1", "1"), ("3", "3"), ("2,3", "2"), ("nonsense", "0"),
+    # ``--gpus all`` resolves to torch's visible-device list; the test
+    # machine has 2 GPUs so the expected answer is "0,1".
+    ("all", "0,1"),
+    # Single index.
+    ("0", "0"), ("1", "1"), ("3", "3"),
+    # Comma-separated subset (full string preserved).
+    ("2,3", "2,3"),
+    # Empty default = "all".
+    ("", "0,1"),
 ])
 def test_gpu_id_resolution(tmp_path, raw, expected):
     cfg = build_config(tmp_path, "breast", tmp_path / "o", overrides={"gpus": raw})
     assert _gpu_id(cfg) == expected
+
+
+@pytest.mark.parametrize("raw", ["nonsense", "0,abc", "1.5"])
+def test_gpu_id_rejects_garbage(tmp_path, raw):
+    cfg = build_config(tmp_path, "breast", tmp_path / "o", overrides={"gpus": raw})
+    with pytest.raises(SystemExit):
+        _gpu_id(cfg)
 
 
 @pytest.mark.parametrize("raw", ["cpu", "none", "false", "no"])

@@ -1,8 +1,14 @@
 """End-to-end DAG driver with manifest-based resume."""
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 from . import STAGES
 from .config import RunConfig
+from .configrender import _gpu_ids
 from .dataset import discover_samples
 from .manifest import Manifest
 from .paths import resolved_config_path, manifest_path
@@ -20,6 +26,79 @@ _REQUIRED_OUTPUT = {
     "tile": "tiles",
     "crop": "cells",
 }
+
+
+
+def _chunked(items, k):
+    """Split ``items`` into at most ``k`` roughly-equal lists (order preserved)."""
+    if k <= 0:
+        return [items]
+    n = len(items)
+    base, rem = divmod(n, k)
+    out, i = [], 0
+    for j in range(k):
+        size = base + (1 if j < rem else 0)
+        out.append(items[i:i + size])
+        i += size
+    return [c for c in out if c]
+
+
+def _fan_out_segment(cfg, samples, out, gpu_ids):
+    """Run the segment stage in parallel across ``len(gpu_ids)`` GPUs.
+
+    Each worker is a child ``wsitrain segment`` subprocess pinned to one
+    device via ``CUDA_VISIBLE_DEVICES=<id>``. The samples are split into
+    contiguous chunks; outputs land in the shared
+    ``<output>/masks/<tissue>/<sample>.npy`` so the next stage (transfer)
+    picks them up transparently. Returns the merged ``{sample_id: nuclei_count}``
+    dict that the regular ``segment`` returns.
+    """
+    chunks = _chunked([s.sample_id for s in samples], len(gpu_ids))
+    procs = []
+    for gid, chunk in zip(gpu_ids, chunks):
+        if not chunk:
+            continue
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = gid
+        # Reuse the currently-running Python + wsitrain entry point so the
+        # child inherits the install path and uses the same code. Each
+        # individual sample_id is one argv element; argparse --samples has
+        # ``nargs="+"`` so it accepts the whole list verbatim. Comma inside a
+        # sample_id is intentional (Xenium panel names) and is preserved.
+        cmd = [sys.executable, "-m", "wsitrain.cli", "segment",
+               "--input", str(cfg.input),
+               "--tissue", cfg.tissue,
+               "--output", str(out),
+               "--gpus", gid,
+               "--samples", *chunk,
+               "--force"]
+        print(f"[dag] fan-out segment -> cuda:{gid} for {len(chunk)} slide(s): {chunk}")
+        # Stream the worker's stderr to the parent's stderr so its traceback
+        # is visible immediately if it fails. stdout is buffered.
+        procs.append((gid, subprocess.Popen(cmd, env=env,
+                                            stdout=subprocess.DEVNULL,
+                                            stderr=subprocess.PIPE)))
+    counts = {}
+    for gid, p in procs:
+        stderr_out, _ = p.communicate()
+        if p.returncode != 0:
+            tail = stderr_out.decode("utf-8", "replace").splitlines()[-30:] if stderr_out else []
+            sys.stderr.write(
+                f"[dag] segment worker on cuda:{gid} failed "
+                f"(exit={p.returncode}); last 30 lines of stderr:\n"
+                + "\n".join(tail) + "\n")
+            raise SystemExit(
+                f"[dag] segment worker on cuda:{gid} exited with code {p.returncode}; aborting.")
+    # Read the produced masks back to compute the per-sample nuclei count
+    # (segment normally returns this; we reproduce it here so the manifest
+    # gets the same shape).
+    import numpy as _np
+    from . import paths as _paths
+    for s in samples:
+        mpath = _paths.masks_dir(out, cfg.tissue) / f"{s.sample_id}.npy"
+        if mpath.is_file():
+            counts[s.sample_id] = int(_np.load(mpath, mmap_mode="r").max())
+    return {"segmenter": "(fan-out)", "nuclei_per_sample": counts}
 
 
 def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = None,
@@ -86,7 +165,17 @@ def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = Non
             reset_cache(stage, cfg, cfg.output)
         print(f"[{stage}] running…")
         try:
-            info = STAGE_FUNCS[stage](cfg, samples, cfg.output)
+            gpu_ids = _gpu_ids(cfg)
+            use_fanout = (
+                stage == "segment"
+                and len(gpu_ids) > 1
+                and len(samples) > 1
+                and getattr(cfg, "nuclei_source", "xenium-coords") == "he-mask"
+            )
+            if use_fanout:
+                info = _fan_out_segment(cfg, samples, cfg.output, gpu_ids)
+            else:
+                info = STAGE_FUNCS[stage](cfg, samples, cfg.output)
             key = _REQUIRED_OUTPUT.get(stage)
             # Only one of tile/crop applies to a given model; the other reports
             # itself skipped and owes no output.

@@ -34,7 +34,7 @@ def _kind(action: argparse.Action) -> str:
 def _entries(command: str) -> list[dict]:
     by_dest: dict[str, dict] = {}
     for action in parser_for(command)._actions:
-        if action.dest in _HIDDEN or not action.option_strings:
+        if action.dest in _HIDDEN or not action.option_strings or action.dest.startswith("_"):
             continue
         primary = max(action.option_strings, key=len)
         if isinstance(action, argparse._StoreFalseAction) and action.dest in by_dest:

@@ -43,6 +43,11 @@ _INVALIDATES: dict[str, str] = {
     # so these belong to split even though only train consumes them.
     "backbone": "split",
     "fold": "split",
+    # split renders them into train_configs/<backbone>/<fold>.yaml, so a change
+    # has to re-render before train can pick it up.
+    "epochs": "split",
+    "lr": "split",
+    "weight_decay": "split",
     "tune": "train",
 }
 

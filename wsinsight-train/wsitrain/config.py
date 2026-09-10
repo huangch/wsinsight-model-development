@@ -252,3 +252,37 @@ def build_config(input_dir: Path, tissue: str, output: Path | None,
     """``resolve_config`` without the provenance, for callers that don't need it."""
     return resolve_config(input_dir, tissue, output, overrides=overrides,
                           base=base, config=config)[0]
+
+
+# Settings the end2end (CellViT) path cannot honour, and why. CellViT builds its
+# own DataLoaders and always starts from its checkpoint, so these never reach it.
+_END2END_IGNORED = {
+    "batch_size": "CellViT hardcodes its DataLoader batch_size to 8",
+    "num_workers": "CellViT hardcodes its DataLoader num_workers to 8",
+    "pretrained": "CellViT always starts from its own --cellvit-path checkpoint",
+}
+
+
+def check_effective(cfg: RunConfig, source: dict[str, str]) -> None:
+    """Refuse a run whose settings the chosen path would silently drop.
+
+    A value only counts as asked-for when it both came from a flag/config file
+    and differs from the shipped default: saved dumps and full --config records
+    restate every default, and re-raising on those would block every resume.
+    """
+    if getattr(cfg, "object_detection", "end2end") != "end2end":
+        return                       # the cellcls path honours all of these
+    shipped = load_defaults()
+    bad = [(f, why) for f, why in _END2END_IGNORED.items()
+           if source.get(f) in ("flag", "config")
+           and getattr(cfg, f) != shipped.get(f)]
+    if not bad:
+        return
+    lines = [f"  --{f.replace('_', '-')} = {getattr(cfg, f)!r}: {why}"
+             for f, why in bad]
+    raise SystemExit(
+        "these settings cannot take effect on the end2end (CellViT) path:\n"
+        + "\n".join(lines)
+        + "\n\nDrop them, or train the cell classifier instead with "
+          "--object-detection stardist --architecture <torchvision-model>, "
+          "which does honour them.")

@@ -198,3 +198,39 @@ def test_rendered_config_is_valid_yaml(cfg, pipeline):
     doc = yaml.safe_load(path.read_text())
     assert doc["data"]["num_classes"] == 2
     assert set(doc["data"]["label_map"].values()) == set(LABELS.values())
+
+
+def test_redo_wipes_cascades_and_preserves_upstream(cfg, pipeline, monkeypatch):
+    """The three redo bugs, in one end-to-end pass.
+
+    Unit tests missed all of them because they exercised the wipe functions in
+    isolation: the failures only appear once the manifest, --run-skip and the
+    stage ordering interact.
+    """
+    import json
+    from wsitrain import dag, paths
+    from wsitrain.manifest import Manifest
+    from wsitrain.paths import manifest_path
+
+    mf = Manifest.load_or_new(manifest_path(cfg.output, cfg.tissue), cfg.to_dict())
+    for s in ("annotate", "segment", "transfer", "tile", "crop", "split",
+              "train", "validate", "export", "report"):
+        mf.mark(s, "done")
+
+    tiles = sorted(p.name for p in paths.images_dir(cfg.output, cfg.tissue).glob("*.png"))
+    assert tiles, "fixture produced no tiles"
+
+    dag.run(cfg, redo={"split"}, skip=["train", "validate", "export", "report"])
+
+    after = json.loads(manifest_path(cfg.output, cfg.tissue).read_text())["stages"]
+    # 1. cascade: redoing split invalidates every later stage...
+    for s in ("train", "validate", "export", "report"):
+        assert after[s]["status"] != "done", f"{s} still marked done after cascade"
+    # 2. ...even though --run-skip meant they never ran this invocation.
+    # 3. upstream artefacts survive: split must not strand tile.
+    assert sorted(p.name for p in
+                  paths.images_dir(cfg.output, cfg.tissue).glob("*.png")) == tiles
+    assert after["tile"]["status"] == "done"
+    # split re-rendered the config it owns.
+    assert paths.train_config_path(
+        cfg.output, cfg.tissue, cfg.backbone, cfg.fold).exists()

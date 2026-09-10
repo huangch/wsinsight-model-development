@@ -128,3 +128,102 @@ def test_split_accepts_a_usable_set(cfg_factory, monkeypatch):
     info = stages.split(cfg, [], cfg.output)
 
     assert info["n_train"] >= 1 and info["n_val"] >= 1
+
+
+def test_stale_multi_gpu_config_is_refused_before_cellvit_runs(tmp_path):
+    # A config rendered before the gpu fix reached CellViT as "cuda:0,1".
+    cfgp = tmp_path / "fold_0.yaml"
+    cfgp.write_text("seed: 42\ngpu: 0,1\nbackbone: SAM-H-x40\n")
+    with pytest.raises(RuntimeError, match="--redo-split"):
+        stages._check_rendered_gpu(cfgp)
+
+
+def test_single_gpu_config_is_accepted(tmp_path):
+    cfgp = tmp_path / "fold_0.yaml"
+    cfgp.write_text("seed: 42\ngpu: 0\nbackbone: SAM-H-x40\n")
+    stages._check_rendered_gpu(cfgp)
+
+
+def test_wiping_train_keeps_the_config_split_owns(cfg_factory):
+    # --redo-train used to delete train_configs/, leaving split marked done
+    # with its output gone -> "missing train config" on the next run.
+    from wsitrain import paths
+    cfg = cfg_factory()
+    cfgp = paths.train_config_path(cfg.output, cfg.tissue, cfg.backbone, cfg.fold)
+    cfgp.parent.mkdir(parents=True, exist_ok=True)
+    cfgp.write_text("gpu: 0\n")
+
+    stages._STAGE_WIPES["train"](cfg.output, cfg)
+
+    assert cfgp.exists()
+
+
+def test_wiping_split_does_remove_its_own_config(cfg_factory):
+    from wsitrain import paths
+    cfg = cfg_factory()
+    cfgp = paths.train_config_path(cfg.output, cfg.tissue, cfg.backbone, cfg.fold)
+    cfgp.parent.mkdir(parents=True, exist_ok=True)
+    cfgp.write_text("gpu: 0\n")
+
+    stages._STAGE_WIPES["split"](cfg.output, cfg)
+
+    assert not cfgp.exists()
+
+
+def test_no_wipe_reaches_an_upstream_stages_artefacts(cfg_factory):
+    """A wipe may clear its own or a later stage's output, never an earlier one.
+
+    Cascade re-runs later stages, so deleting their files is safe; an earlier
+    stage stays marked done, so deleting its files strands the run (--redo-train
+    used to delete the config split renders).
+    """
+    from wsitrain import STAGES, paths
+    from wsitrain.stages import _STAGE_WIPES
+
+    def seed(out, cfg):
+        owned: dict[str, list] = {}
+        def put(stage, d, name):
+            d.mkdir(parents=True, exist_ok=True)
+            (d / name).write_text("x")
+            owned.setdefault(stage, []).append(d / name)
+        put("segment", paths.masks_dir(out, cfg.tissue), "s.npy")
+        put("transfer", paths.nuclei_dir(out, cfg.tissue), "n.csv")
+        put("tile", paths.images_dir(out, cfg.tissue), "t.png")
+        put("crop", paths.cells_dir(out, cfg.tissue), "c.h5")
+        put("split", paths.splits_dir(out, cfg.tissue, cfg.fold), "train.csv")
+        put("split", paths.train_config_path(
+            out, cfg.tissue, cfg.backbone, cfg.fold).parent, "fold_0.yaml")
+        put("train", paths.tissue_root(out, cfg.tissue) / "cache", "c.h5")
+        put("validate", paths.report_dir(out, cfg.tissue), "scores.json")
+        put("export", paths.models_dir(out, cfg.tissue) / "main", "m.pth")
+        put("report", paths.report_dir(out, cfg.tissue), "summary.txt")
+        return owned
+
+    for target, wipe in _STAGE_WIPES.items():
+        cfg = cfg_factory()
+        owned = seed(cfg.output, cfg)
+        wipe(cfg.output, cfg)
+        upstream = [s for s, ps in owned.items()
+                    if STAGES.index(s) < STAGES.index(target)
+                    and any(not p.exists() for p in ps)]
+        assert not upstream, f"_wipe_{target} deleted upstream artefacts: {upstream}"
+
+
+def test_an_aborted_run_does_not_wipe_artefacts(cfg_factory):
+    """--redo used to wipe before the run was known to be viable.
+
+    dag.run defers its lasting writes until after the sample checks; the wipe
+    is the most destructive of them and skipped that guard, so a typo'd
+    --input deleted artefacts the aborted run could never rebuild.
+    """
+    from wsitrain import dag, paths
+    cfg = cfg_factory()
+    (cfg.input / cfg.tissue).mkdir(parents=True, exist_ok=True)  # no samples
+    d = paths.tissue_root(cfg.output, cfg.tissue) / "cache"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "precious.h5").write_text("expensive to recompute")
+
+    with pytest.raises(SystemExit):
+        dag.run(cfg, redo={"train"})
+
+    assert (d / "precious.h5").exists()

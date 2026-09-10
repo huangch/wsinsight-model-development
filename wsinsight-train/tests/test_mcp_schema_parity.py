@@ -15,7 +15,10 @@ from wsitrain.mcp.schema import COMMANDS, LONG_RUNNING, get_command
 
 
 def _real_flags(command: str) -> set[str]:
-    return {a.dest for a in parser_for(command)._actions if a.option_strings}
+    # Skip argparse-suppressed action destinations (``_redos`` et al.); they
+    # are an internal handle for repeatable flags and never appear in MCP.
+    return {a.dest for a in parser_for(command)._actions
+            if a.option_strings and not a.dest.startswith("_")}
 
 
 @pytest.mark.parametrize("command", sorted(COMMANDS))

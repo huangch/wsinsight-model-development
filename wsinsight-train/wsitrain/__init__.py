@@ -85,6 +85,42 @@ def _harden_tqdm_against_resize() -> None:
 
 _harden_tqdm_against_resize()
 
+
+def _fit_torchinfo_to_terminal() -> None:
+    """Size torchinfo's summary table to the terminal, not a fixed 90 columns.
+
+    ``get_total_width()`` is ``len(col_names) * col_width + layer_name_width``
+    and never consults the terminal, so CellViT's ``summary()`` rules wrap on a
+    narrow window and waste a wide one. Widening the layer-name column keeps the
+    rules and the rows the same length. ``shutil`` honours ``COLUMNS``, which is
+    how the width reaches a child whose stdout is a pipe (see subproc.child_env).
+    """
+    try:
+        from torchinfo import formatting
+    except Exception:  # torchinfo is CellViT's dependency, not ours
+        return
+    if getattr(formatting.FormattingOptions, "_wsitrain_width_fitted", False):
+        return
+
+    import shutil
+
+    _orig_init = formatting.FormattingOptions.__init__
+
+    def _init(self, *args, **kwargs):  # noqa: ANN001
+        _orig_init(self, *args, **kwargs)
+        try:
+            width = shutil.get_terminal_size().columns
+            n_cols = max(len(tuple(self.col_names)), 1)
+            self.layer_name_width = max(width - n_cols * self.col_width, 20)
+        except Exception:
+            pass  # leave torchinfo's own default width
+
+    formatting.FormattingOptions.__init__ = _init
+    formatting.FormattingOptions._wsitrain_width_fitted = True
+
+
+_fit_torchinfo_to_terminal()
+
 STAGES = (
     "annotate", "segment", "transfer", "tile", "crop",
     "split", "train", "validate", "export", "report",

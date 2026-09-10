@@ -107,9 +107,14 @@ EXPECTED_FLAGS = {
 }
 
 # -h is the only spelling argparse puts in the usage line, so --help is not here.
+
+from wsitrain import STAGES as _STAGES_FOR_REDOS
 COMMON_FLAGS = {"--input", "--tissue", "--output", "--force", "--config",
                 "--reset-config", "--show-config", "--samples",
                 "--nuclei-source"}
+# ``--redo-<stage>`` is offered on every stage subcommand by ``_add_common``.
+COMMON_REDOS = {f"--redo-{s}" for s in _STAGES_FOR_REDOS}
+COMMON_FLAGS |= COMMON_REDOS
 
 
 @pytest.mark.parametrize("stage", STAGES)

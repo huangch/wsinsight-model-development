@@ -12,6 +12,12 @@
 #
 # Source: 10x Genomics — Xenium Datasets
 # License: 10x Genomics License (non-commercial research)
+#
+# EXCEPTION — the Human_Breast_Biomarkers series below is NOT a public 10x
+# download: its experiment.xenium reports instrument_sw_version "R&D" and the
+# custom panel "Xenium Human Breast Cancer HK Gene Panel (280g Custom)", so
+# searching 10xgenomics.com/datasets will not find it. dataset_name for those
+# entries is the run_name recorded in outs/experiment.xenium.
 
 samples:
   - dataset_name:  "FFPE Human Breast Cancer with 5K Human Pan Tissue and Pathways Panel plus 100 Custom Genes"
@@ -45,3 +51,55 @@ samples:
   - dataset_name:  "Xenium FFPE Human Breast with Custom Add-on Panel/Tissue sample 1 (IDC)"
     he_image:      "Xenium_V1_FFPE_Human_Breast_IDC_With_Addon_he_image"
     relative_outs: "Xenium FFPE Human Breast with Custom Add-on Panel/Tissue sample 1 (IDC)/outs"
+
+  # --- Human_Breast_Biomarkers: 4 blocks x 3 sections, one Xenium
+  # region each. Panel: Xenium Human Breast Cancer HK Gene Panel
+  # (280g Custom). See the EXCEPTION note in the header above.
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S1 Top"
+    he_image:      "Human_Breast_Biomarkers_S1_Top_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S1_Top/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S1 Mid"
+    he_image:      "Human_Breast_Biomarkers_S1_Mid_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S1_Mid/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S1 Bot"
+    he_image:      "Human_Breast_Biomarkers_S1_Bot_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S1_Bot/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S2 Top"
+    he_image:      "Human_Breast_Biomarkers_S2_Top_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S2_Top/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S2 Mid"
+    he_image:      "Human_Breast_Biomarkers_S2_Mid_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S2_Mid/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S2 Bot"
+    he_image:      "Human_Breast_Biomarkers_S2_Bot_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S2_Bot/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S3 Top"
+    he_image:      "Human_Breast_Biomarkers_S3_Top_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S3_Top/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S3 Mid"
+    he_image:      "Human_Breast_Biomarkers_S3_Mid_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S3_Mid/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S3 Bot"
+    he_image:      "Human_Breast_Biomarkers_S3_Bot_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S3_Bot/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S4 Top"
+    he_image:      "Human_Breast_Biomarkers_S4_Top_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S4_Top/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S4 Mid"
+    he_image:      "Human_Breast_Biomarkers_S4_Mid_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S4_Mid/outs"
+
+  - dataset_name:  "Human Breast Cancer 280g Biomarkers + HK Genes S4 Bot"
+    he_image:      "Human_Breast_Biomarkers_S4_Bot_he_image"
+    relative_outs: "Human_Breast_Biomarkers/S4_Bot/outs"

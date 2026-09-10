@@ -88,7 +88,7 @@ def run_tune(cfg, out, cellvit, *, base_config, py):
     _rep = weights_mod.compute_weights(
         paths.label_map_path(out, cfg.tissue),
         paths.labels_dir(out, cfg.tissue), cap=cfg.weight_cap)
-    drop, lr, weights = 0.1, 0.000075, list(_rep.weights)
+    drop, lr, weights = 0.1, cfg.lr, list(_rep.weights)
     li, rejects, log = 0, 0, []
     for it in range(cfg.tune):
         lever = LEVERS[li % len(LEVERS)]

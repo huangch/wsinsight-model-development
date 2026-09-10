@@ -11,10 +11,10 @@ gpu: ${GPU_ID}
 data:
   dataset: DetectionDataset
   dataset_path: ${TISSUE_ROOT}
-  # Pan-tissue slides come from many labs; without this the backbone spends
-  # capacity on the H&E colour signature of each source.
-  normalize_stains_train: true
-  normalize_stains_val: true
+  # Follows --stain-normalization. Macenko raises on a near-uniform crop, so
+  # enabling it needs tiles that are not mostly background.
+  normalize_stains_train: ${NORMALIZE_STAINS}
+  normalize_stains_val: ${NORMALIZE_STAINS}
   num_classes: ${NUM_CLASSES}
   train_filelist: ${TISSUE_ROOT}/splits/${FOLD}/train.csv
   val_filelist: ${TISSUE_ROOT}/splits/${FOLD}/val.csv
@@ -26,14 +26,16 @@ model:
   hidden_dim: 256
 training:
   cache_cell_dataset: true
+  # CellViT hardcodes its DataLoader batch_size/num_workers to 8, so this key
+  # is inert; wsitrain rejects an explicit --batch-size rather than pretend.
   batch_size: 64
-  epochs: 10
+  epochs: ${EPOCHS}
   drop_rate: ${DROP_RATE}
   optimizer: AdamW
   optimizer_hyperparameter:
     betas: [0.85, 0.9]
     lr: ${LR}
-    weight_decay: 1.0e-03
+    weight_decay: ${WEIGHT_DECAY}
   early_stopping_patience: 5
   mixed_precision: true
   eval_every: 1

@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 
 from . import __version__, STAGES
-from .config import (CHOICES, RunConfig, load_config_file, load_resolved,
-                     resolve_config)
+from .config import (CHOICES, RunConfig, check_effective, load_config_file,
+                     load_resolved, resolve_config)
 from .dataset import discover_samples, validate_input
 from .paths import resolved_config_path
 
@@ -127,6 +127,20 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                         "to H&E pixels; skips segment. "
                         "'he-mask': segment on H&E, look up mask nucleus for "
                         "each Xenium cell (slower, matches legacy behaviour).")
+
+    # Per-stage wipe flags: ``--redo-segment``, ``--redo-transfer``, ...,
+    # ``--redo-report``. Repeatable. Each subparser registers its own copy
+    # (argparse does not share argument groups across subparsers).
+    from . import STAGES as _STAGES_FOR_REDO
+    grp = p.add_argument_group("per-stage wipe (repeatable; one flag per stage)")
+    for _s in _STAGES_FOR_REDO:
+        grp.add_argument(f"--redo-{_s}", dest="_redos", action="append_const",
+                          const=_s,
+                          help=f"wipe {_s} artefacts and re-run, even if the "
+                               "manifest says it is already done")
+    # argparse ``append_const`` populates ``--redo-segment --redo-train`` as
+    # a list under dest ``_redos``; we strip it from the cfg-resolver view
+    # before persistence so the flag never lands in the run-config.
 
 
 def _add_labelspace(p: argparse.ArgumentParser) -> None:
@@ -404,10 +418,21 @@ def _cmd_run(args) -> int:
                                  overrides=overrides, base=base, config=config)
     _print_config(getattr(args, "only", None) or "run", cfg, source, config_path,
                   getattr(args, "show_config", False))
+    check_effective(cfg, source)
     from . import dag
-    return dag.run(cfg, only=getattr(args, "only", None),
-                   skip=_stages(getattr(args, "run_skip", None)), force=args.force,
-                   samples=_split_csv_list(getattr(args, "samples", None)))
+    from .dag import run as _dag_run
+    redos = set(getattr(args, "_redos", None) or ())
+    if args.force:
+        # ``--force`` always wipes everything; --redo-* adds fine
+        # control but never narrows the wipe. The actual wipe
+        # happens inside dag.run so users see one log line per stage
+        # being invalidated rather than two passes.
+        redos = None  # signal: wipe everything
+    return _dag_run(cfg, only=getattr(args, "only", None),
+                     skip=_stages(getattr(args, "run_skip", None)),
+                     force=args.force,
+                     samples=_split_csv_list(getattr(args, "samples", None)),
+                     redo=(None if args.force else redos))
 
 
 

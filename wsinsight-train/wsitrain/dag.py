@@ -150,7 +150,8 @@ def _fan_out_segment(cfg, samples, out, gpu_ids,
 
 
 def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = None,
-        force: bool = False, samples: list[str] | None = None) -> int:
+        force: bool = False, samples: list[str] | None = None,
+        redo: set[str] | None = None) -> int:
     """Run the pipeline.
 
     ``only`` names a single stage (a stage command). Because the stages it
@@ -163,9 +164,25 @@ def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = Non
     across GPUs/CPU pools by launching N parallel ``wsitrain`` processes with
     disjoint ``--samples`` lists; the per-process manifest entries merge
     naturally because each process writes its own outputs.
+
+    ``redo`` is a set of stage names whose on-disk artefacts must be wiped
+    BEFORE the stage runs, regardless of what the manifest says. Use a single
+    ``--redo-<stage>`` flag (repeatable) or pass the set programmatically.
+    Naming a stage invalidates every later stage too, since their output was
+    derived from it. ``--force`` is the legacy "wipe everything" switch.
+    Both unmark the affected stages in the manifest so the re-run is allowed,
+    and both wait until the invocation is known to be viable.
     """
     skipped = set(skip or [])
     cfg.output.mkdir(parents=True, exist_ok=True)
+
+    from .stages import _STAGE_WIPES as _wipes
+    redo = set(redo or ())
+    if redo:
+        # A redone stage makes every later stage's output stale, so cascade the
+        # way a config change does in Manifest._stale_stages.
+        earliest = min(STAGES.index(s) for s in redo if s in STAGES)
+        redo |= set(STAGES[earliest:])
     samples_discovered = discover_samples(cfg.input, cfg.tissue)
     if cfg.transform != "none":
         kept = [s for s in samples_discovered if s.aligned]
@@ -203,24 +220,42 @@ def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = Non
     resolved_config_path(cfg.output, cfg.tissue).write_text(yaml.safe_dump(cfg.to_dict()))
     mf = Manifest.load_or_new(manifest_path(cfg.output, cfg.tissue), cfg.to_dict())
 
+    # Every redone stage is unmarked, not just the ones this invocation will
+    # run or can wipe: --run-skip or an interrupt would otherwise leave the
+    # manifest claiming output the wipe deleted, and annotate has no wipe at
+    # all (its CSVs live in the user's data tree). Wiping waits until here for
+    # the same reason the writes above do -- a doomed run must not delete
+    # artefacts it will never rebuild.
+    if force:
+        mf = Manifest(manifest_path(cfg.output, cfg.tissue))
+    for stage in (list(_wipes) if force else sorted(redo & set(_wipes))):
+        n = _wipes[stage](cfg.output, cfg)
+        if n:
+            print(f"[dag] wiped {n} artefact(s) for stage {stage!r}")
+    if not force:
+        for s in sorted(redo & set(STAGES), key=STAGES.index):
+            mf.mark(s, "pending")
+        if redo:
+            print(f"[dag] invalidated {sorted(redo, key=STAGES.index)}")
     for stage in todo:
-        if not force and mf.is_done(stage):
+        if not (force or stage in redo) and mf.is_done(stage):
             print(f"[{stage}] up-to-date — skipping")
             continue
         if only:
             prereq.check(stage, mf, cfg)
-        if force:
-            reset_cache(stage, cfg, cfg.output)
         print(f"[{stage}] running…")
         try:
-            gpu_ids = _gpu_ids(cfg)
-            use_fanout = (
-                stage == "segment"
-                and len(gpu_ids) > 1
+            # Resolved lazily: --gpus cpu raises, and only segment fan-out
+            # needs a device, so the documented CPU escape hatch
+            # (--gpus cpu --run-skip split train validate export) still runs.
+            gpu_ids = (
+                _gpu_ids(cfg)
+                if stage == "segment"
                 and len(samples) > 1
                 and getattr(cfg, "nuclei_source", "xenium-coords") == "he-mask"
+                else []
             )
-            if use_fanout:
+            if len(gpu_ids) > 1:
                 info = _fan_out_segment(cfg, samples, cfg.output, gpu_ids)
             else:
                 info = STAGE_FUNCS[stage](cfg, samples, cfg.output)

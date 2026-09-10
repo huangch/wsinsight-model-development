@@ -45,24 +45,24 @@ def gpu_probe(tmp_path, monkeypatch):
 
 def test_gpu_zero_selects_device_not_cpu(cfg_factory, gpu_probe):
     """'0' is device 0 for CellViT, so it must not disable the segmenter's GPU."""
-    assert gpu_probe(cfg_factory(gpus="0")) is True
+    assert gpu_probe(cfg_factory(gpus="0", nuclei_source="he-mask")) is True
 
 
 def test_gpu_index_keeps_gpu_enabled(cfg_factory, gpu_probe):
-    assert gpu_probe(cfg_factory(gpus="2")) is True
+    assert gpu_probe(cfg_factory(gpus="2", nuclei_source="he-mask")) is True
 
 
 def test_auto_keeps_gpu_enabled(cfg_factory, gpu_probe):
-    assert gpu_probe(cfg_factory(gpus="auto")) is True
+    assert gpu_probe(cfg_factory(gpus="auto", nuclei_source="he-mask")) is True
 
 
 @pytest.mark.parametrize("raw", ["cpu", "none", "no", "false", ""])
 def test_cpu_aliases_disable_gpu(cfg_factory, gpu_probe, raw):
-    assert gpu_probe(cfg_factory(gpus=raw)) is False
+    assert gpu_probe(cfg_factory(gpus=raw, nuclei_source="he-mask")) is False
 
 
 def test_gpu_zero_agrees_across_stages(tmp_path, cfg_factory, gpu_probe):
-    cfg = cfg_factory(gpus="0")
+    cfg = cfg_factory(gpus="0", nuclei_source="he-mask")
     assert _gpu_id(cfg) == "0"
     assert gpu_probe(cfg) is True
 

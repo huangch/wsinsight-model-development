@@ -20,7 +20,10 @@ def _base_cfg(cfg_factory, **over):
     # mpp=1.0 makes microns and pixels interchangeable, so the expected nucleus
     # hits can be read straight off the mask fixture.
     defaults = dict(mpp=1.0, transform="none", match_radius_px=0,
-                    min_match_rate=0.0, task=TASK)
+                    min_match_rate=0.0, task=TASK,
+                    # xenium-coords is the new default; this fixture exercises
+                    # the he-mask lookup path explicitly.
+                    nuclei_source="he-mask")
     defaults.update(over)
     return cfg_factory(**defaults)
 

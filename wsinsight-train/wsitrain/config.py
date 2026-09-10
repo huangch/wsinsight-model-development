@@ -22,6 +22,7 @@ _IO_FIELDS = ("input", "tissue", "output")
 CHOICES: dict[str, tuple[str, ...]] = {
     "segmenter": ("cellpose", "stardist"),
     "transform": ("affine", "affine+bspline", "none"),
+    "nuclei_source": ("xenium-coords", "he-mask"),
 }
 
 
@@ -63,6 +64,17 @@ class RunConfig:
     # one slide end-to-end; 1 keeps the original serial behaviour, >1 spreads
     # slides across cores. The segment stage is not affected.
     tile_workers: int = 1
+
+    # Where training cell positions come from.
+    #   xenium-coords (default): the Xenium cell centroid, projected through
+    #     the SIFT/bUnwarpJ registration into H&E pixel coordinates, IS the
+    #     training point. No segment stage is required. min_match_rate and
+    #     match_radius_px carry no meaning in this mode.
+    #   he-mask: the segment stage produces an H&E instance mask; transfer
+    #     looks up the mask nucleus under each projected Xenium cell and
+    #     drops cells that fail to land on a nucleus. match_radius_px is the
+    #     search window around the projected point.
+    nuclei_source: str = "xenium-coords"   # xenium-coords | he-mask
 
     # splits / weights
     val_frac: float = 0.20

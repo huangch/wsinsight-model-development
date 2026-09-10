@@ -64,7 +64,12 @@ def cfg(dataset, tmp_path):
                                    "min_match_rate": 0.0, "tile_px": 16,
                                    "min_cells": 1, "bg_thresh": 250.0,
                                    "overlap": 0.0, "val_frac": 0.5,
-                                   "by_slide": False, "segmenter": "fake"})
+                                   "by_slide": False, "segmenter": "fake",
+                                   # e2e fixture drives a Fake segmenter and
+                                   # exercises the he-mask pipeline; pin
+                                   # here so the global default flip to
+                                   # xenium-coords does not break it.
+                                   "nuclei_source": "he-mask"})
 
 
 @pytest.fixture

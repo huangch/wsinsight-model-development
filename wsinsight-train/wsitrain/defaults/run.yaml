@@ -37,6 +37,12 @@ bg_thresh: 240.0
 overlap: 0.0
 tile_workers: 1       # 1 = serial; >1 fans out per-slide across cores
 
+# Where training cell positions come from. xenium-coords (default) uses the
+# Xenium centroid projected to H&E pixels as the training point and skips the
+# segment stage. he-mask runs segment on H&E and looks up the nearest mask
+# nucleus for each projected Xenium cell.
+nuclei_source: xenium-coords    # xenium-coords | he-mask
+
 # splits / weights
 val_frac: 0.20
 by_slide: false      # tile-based (stratified per slide) split; true = whole-slide holdout

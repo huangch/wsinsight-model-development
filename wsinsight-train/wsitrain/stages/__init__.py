@@ -309,6 +309,15 @@ def reset_cache(stage: str, cfg, out: Path) -> None:
 
 def segment(cfg, samples, out: Path) -> dict[str, Any]:
     """Segment nuclei on each H&E (Cellpose/StarDist) → instance masks .npy."""
+    if getattr(cfg, "nuclei_source", "xenium-coords") == "xenium-coords":
+        # When the user has chosen xenium-coords as the cell-position source,
+        # the mask is not consulted anywhere downstream (transfer uses
+        # Xenium cell_id as the nucleus_id). Skip the stage entirely so the
+        # manifest is honest about producing no masks, and so a 25 min GPU
+        # StarDist run is not silently launched for nothing.
+        print("[segment] skipped: nuclei_source=xenium-coords (mask not needed)")
+        return {"skipped": "nuclei_source=xenium-coords", "nuclei_per_sample": {}}
+
     import json
 
     import numpy as np
@@ -514,43 +523,68 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
 
     counts, rates, dropped = {}, {}, []
     conflicts, used = {}, set()
+    xenium_only = getattr(cfg, "nuclei_source", "xenium-coords") == "xenium-coords"
+    if xenium_only:
+        print("[transfer] nuclei_source=xenium-coords; "
+              "skipping segment + mask lookup, using Xenium cell_id as nucleus_id.")
     for s in tqdm(samples, desc="transfer:join", unit="slide", ascii=" =", dynamic_ncols=True):
         df = frames.pop(s.sample_id)  # release each frame as we go
-        # Only scattered points are read, so the mask never needs to be resident.
+        if xenium_only:
+            # Open the H&E lazily only when the transform needs target_wh.
+            mask = None
+            if cfg.transform == "affine+bspline":
+                # affine+bspline warps must land in the H&E pixel grid; the
+                # B-spline lattice spans the full-res target. Read just the
+                # shape, never the pixels.
+                with SlideReader(s.he) as reader:
+                    mask = np.empty((reader.height, reader.width), dtype=np.uint8)
+                    # fill with zeros so downstream ``mask.shape`` is correct
+                    # without holding pixel data resident.
+            else:
+                mask = np.zeros((1, 1), dtype=np.uint8)
+            xpx, ypx = _to_px(s, df, mask)
+            # Xenium cell_id is already unique per nucleus; no mask lookup,
+            # no min_match_rate gate, no per-nucleus dedup.
+            df = df.assign(x_px=xpx, y_px=ypx,
+                           nucleus_id=df["cell_id"].astype("int64"),
+                           class_int=df["label"].map(name_to_int))
+            df = df[df["class_int"].notna()]
+            df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)
+            counts[s.sample_id] = len(df)
+            rates[s.sample_id] = 1.0  # every Xenium cell IS a nucleus
+            used.update(int(v) for v in df["class_int"].unique())
+            conflicts[s.sample_id] = 0
+            continue
+
+        # Default (he-mask) path: every Xenium cell must land on a mask nucleus.
         mask_path = mask_dir / f"{s.sample_id}.npy"
         if not mask_path.exists():
             raise SystemExit(
                 f"[transfer] no mask for {s.sample_id}: {mask_path} is missing. "
-                "The segment stage ran over a different sample set (most often "
-                "because --transform changed); re-run `wsitrain segment` with "
-                "the transform this command is using.")
+                "Run wsitrain segment first, or pass --nuclei-source xenium-coords "
+                "to skip the mask/lookup stage.")
         mask = np.load(mask_path, mmap_mode="r")
         xpx, ypx = _to_px(s, df, mask)
         nid = _lookup(mask, xpx, ypx, cfg.match_radius_px)
         df = df.assign(x_px=xpx, y_px=ypx, nucleus_id=nid,
                        class_int=df["label"].map(name_to_int))
-        # Registration quality is how many cells landed on a nucleus at all; the
-        # dedup below is nucleus density, and must not be charged against it.
         rate = int((nid > 0).sum()) / max(len(nid), 1)
         rates[s.sample_id] = round(rate, 4)
         if rate < cfg.min_match_rate:
-            # Below this the surviving matches are mostly chance collisions with
-            # whatever nucleus happens to sit under a mis-registered point.
             dropped.append(s.sample_id)
             print(f"[transfer] DROP {s.sample_id}: match rate {rate:.1%} "
                   f"< min_match_rate {cfg.min_match_rate:.0%}")
             del mask, df
             continue
         df = df[df.nucleus_id > 0]
-        # Several Xenium cells can land on one nucleus. Only genuinely conflicting
-        # labels are unusable; agreeing ones collapse to a single row.
         agree = df.groupby("nucleus_id")["class_int"].transform("nunique").eq(1)
         conflicts[s.sample_id] = int((~agree).sum())
         df = df[agree].drop_duplicates("nucleus_id", keep="first")
         df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)
         counts[s.sample_id] = len(df)
         used.update(int(v) for v in df["class_int"].unique())
-        del mask, df  # free mask + joined frame before next slide
+        del mask, df
+
     if not counts:
         raise RuntimeError("every slide fell below min_match_rate; registration is broken")
     # Classes carried only by dropped slides would otherwise sit in label_map with

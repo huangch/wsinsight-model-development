@@ -559,7 +559,7 @@ def test_segment_stage_runs_without_torch(tmp_path, cfg_factory, monkeypatch):
     he = tmp_path / "s1_he_image.ome.tif"
     tifffile.imwrite(he, np.full((8, 8, 3), 10, np.uint8))
     s = Sample("breast__s1", "breast", tmp_path, he, True)
-    cfg = cfg_factory()
+    cfg = cfg_factory(nuclei_source="he-mask")
 
     info = segment_stage(cfg, [s], cfg.output)
 
@@ -587,7 +587,7 @@ def test_segment_stage_reuses_cached_masks(tmp_path, cfg_factory, monkeypatch):
     he = tmp_path / "s1_he_image.ome.tif"
     tifffile.imwrite(he, np.full((8, 8, 3), 10, np.uint8))
     s = Sample("breast__s1", "breast", tmp_path, he, True)
-    cfg = cfg_factory()
+    cfg = cfg_factory(nuclei_source="he-mask")
 
     segment_stage(cfg, [s], cfg.output)
     segment_stage(cfg, [s], cfg.output)

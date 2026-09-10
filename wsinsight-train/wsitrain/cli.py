@@ -111,6 +111,12 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                         "the manifest records what each produced. The filter "
                         "is applied after the aligned/unaligned filter. "
                         "Repeatable or comma-separated.")
+    p.add_argument("--nuclei-source", default=None, choices=CHOICES["nuclei_source"],
+                   help="where training cell positions come from. "
+                        "'xenium-coords' (default): Xenium centroid projected "
+                        "to H&E pixels; skips segment. "
+                        "'he-mask': segment on H&E, look up mask nucleus for "
+                        "each Xenium cell (slower, matches legacy behaviour).")
 
 
 def _add_labelspace(p: argparse.ArgumentParser) -> None:
@@ -274,11 +280,17 @@ _RUN_FLAGS = (_add_labelspace, _add_annotate, _add_segment, _add_mpp, _add_trans
 
 def _fields_for(command: str) -> set[str]:
     """Settings the command exposes, read off its own parser so a new flag
-    cannot forget to register itself in a second list."""
+    cannot forget to register itself in a second list. ``input``/``tissue``/
+    ``output`` come from _add_common; they are not RunConfig fields and would
+    otherwise leak into ``source`` lookups in _print_config.
+    """
     p = argparse.ArgumentParser(add_help=False)
+    _add_common(p)
     for add in (_RUN_FLAGS if command == "run" else _STAGE_FLAGS.get(command, ())):
         add(p)
-    return {a.dest for a in p._actions} & set(RunConfig.__dataclass_fields__)
+    return ({a.dest for a in p._actions}
+            & set(RunConfig.__dataclass_fields__)
+            - {"input", "tissue", "output"})
 
 def parser_for(command: str) -> argparse.ArgumentParser:
     """The flags a command accepts, assembled exactly as ``main`` does.

@@ -108,7 +108,7 @@ EXPECTED_FLAGS = {
 
 # -h is the only spelling argparse puts in the usage line, so --help is not here.
 COMMON_FLAGS = {"--input", "--tissue", "--output", "--force", "--config",
-                "--reset-config", "--show-config"}
+                "--reset-config", "--show-config", "--samples"}
 
 
 @pytest.mark.parametrize("stage", STAGES)

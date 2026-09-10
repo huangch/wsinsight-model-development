@@ -23,24 +23,45 @@ _REQUIRED_OUTPUT = {
 
 
 def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = None,
-        force: bool = False) -> int:
+        force: bool = False, samples: list[str] | None = None) -> int:
     """Run the pipeline.
 
     ``only`` names a single stage (a stage command). Because the stages it
     depends on are not part of this invocation, they are checked against the
     manifest first. A full or ``skip``-ed run needs no such check: it executes
     the stages in order and aborts as soon as one fails.
+
+    ``samples`` filters the discovered samples to the given subset AFTER the
+    aligned/unaligned filter. The intent is to let the operator shard work
+    across GPUs/CPU pools by launching N parallel ``wsitrain`` processes with
+    disjoint ``--samples`` lists; the per-process manifest entries merge
+    naturally because each process writes its own outputs.
     """
     skipped = set(skip or [])
     cfg.output.mkdir(parents=True, exist_ok=True)
-    samples = discover_samples(cfg.input, cfg.tissue)
+    samples_discovered = discover_samples(cfg.input, cfg.tissue)
     if cfg.transform != "none":
-        kept = [s for s in samples if s.aligned]
-        dropped = len(samples) - len(kept)
+        kept = [s for s in samples_discovered if s.aligned]
+        dropped = len(samples_discovered) - len(kept)
         if dropped:
             print(f"[run] skipping {dropped} unaligned sample(s) (transform={cfg.transform}); "
                   f"register them or use --transform none")
-        samples = kept
+        samples_discovered = kept
+    if samples:
+        wanted = set(samples)
+        before = len(samples_discovered)
+        samples_kept = [s for s in samples_discovered if s.sample_id in wanted]
+        missing = sorted(wanted - {s.sample_id for s in samples_kept})
+        if missing:
+            raise SystemExit(
+                f"[run] --samples requested {len(missing)} id(s) not discovered for "
+                f"tissue={cfg.tissue} (e.g. {missing[:3]}); check spelling or "
+                "drop --samples to discover them.")
+        if len(samples_kept) != before:
+            print(f"[run] --samples narrowed {before} -> {len(samples_kept)} sample(s)")
+        samples = samples_kept
+    else:
+        samples = samples_discovered
     todo = [only] if only else [s for s in STAGES if s not in skipped]
     print(f"[run] tissue={cfg.tissue} samples={len(samples)} steps={todo}")
 

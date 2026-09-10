@@ -76,6 +76,16 @@ def _stages(values) -> list[str]:
     return out
 
 
+def _split_csv_list(values) -> list[str] | None:
+    """Same flatten-to-list shape as ``_stages`` but no enum check."""
+    if values is None:
+        return None
+    out: list[str] = []
+    for v in values:
+        out += [part.strip() for part in str(v).split(",") if part.strip()]
+    return out
+
+
 # ---------------------------------------------------------------- flag groups
 
 def _add_common(p: argparse.ArgumentParser) -> None:
@@ -93,6 +103,14 @@ def _add_common(p: argparse.ArgumentParser) -> None:
                         "and start from the shipped defaults plus these flags")
     p.add_argument("--show-config", action="store_true",
                    help="list every setting and where its value came from")
+    p.add_argument("--samples", action="extend", nargs="+", default=None,
+                   metavar="SAMPLE_ID",
+                   help="restrict the run to a subset of discovered sample_ids. "
+                        "Used to shard work across GPUs/CPU pools: launch N "
+                        "wsitrain processes with disjoint --samples lists and "
+                        "the manifest records what each produced. The filter "
+                        "is applied after the aligned/unaligned filter. "
+                        "Repeatable or comma-separated.")
 
 
 def _add_labelspace(p: argparse.ArgumentParser) -> None:
@@ -354,7 +372,8 @@ def _cmd_run(args) -> int:
                   getattr(args, "show_config", False))
     from . import dag
     return dag.run(cfg, only=getattr(args, "only", None),
-                   skip=_stages(getattr(args, "run_skip", None)), force=args.force)
+                   skip=_stages(getattr(args, "run_skip", None)), force=args.force,
+                   samples=_split_csv_list(getattr(args, "samples", None)))
 
 
 

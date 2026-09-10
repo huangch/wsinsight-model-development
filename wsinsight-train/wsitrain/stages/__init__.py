@@ -544,9 +544,11 @@ def transfer(cfg, samples, out: Path) -> dict[str, Any]:
                 mask = np.zeros((1, 1), dtype=np.uint8)
             xpx, ypx = _to_px(s, df, mask)
             # Xenium cell_id is already unique per nucleus; no mask lookup,
-            # no min_match_rate gate, no per-nucleus dedup.
+            # no min_match_rate gate, no per-nucleus dedup. We keep
+            # ``cell_id`` around in memory for traceability but the on-disk
+            # CSV emits only x_px, y_px, class_int, matching the contract
+            # downstream stages (tile, train) consume.
             df = df.assign(x_px=xpx, y_px=ypx,
-                           nucleus_id=df["cell_id"].astype("int64"),
                            class_int=df["label"].map(name_to_int))
             df = df[df["class_int"].notna()]
             df[["x_px", "y_px", "class_int"]].to_csv(nuc_dir / f"{s.sample_id}.csv", index=False)

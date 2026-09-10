@@ -24,6 +24,10 @@ def _prerequisites(stage: str, cfg) -> tuple[str, ...]:
     """Only one cutting stage runs; the other is marked done with no output."""
     if stage == "split" and getattr(cfg, "object_detection", "end2end") != "end2end":
         return ("crop",)
+    # In xenium-coords mode the segment stage is a no-op (cells come from
+    # Xenium cell_id, no mask lookup), so transfer no longer depends on it.
+    if stage == "transfer" and getattr(cfg, "nuclei_source", "xenium-coords") == "xenium-coords":
+        return ("annotate",)
     return PREREQUISITES.get(stage, ())
 
 # Stage -> the artifact its successors read. A done-mark alone is not enough:

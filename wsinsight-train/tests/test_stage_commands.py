@@ -145,8 +145,10 @@ def _manifest(out, tissue, done):
 
 
 class _Cfg:
-    def __init__(self, out, tissue="breast", input="/in"):
+    def __init__(self, out, tissue="breast", input="/in", **kw):
         self.output, self.tissue, self.input = out, tissue, input
+        for k, v in kw.items():
+            setattr(self, k, v)
 
 
 @pytest.mark.parametrize("stage,missing", [
@@ -184,7 +186,7 @@ def test_prereq_rejects_a_done_mark_whose_output_is_gone(tmp_path):
     out = tmp_path / "out"
     mf = _manifest(out, "breast", done=("annotate", "segment"))
     with pytest.raises(SystemExit) as e:
-        prereq.check("transfer", mf, _Cfg(out))
+        prereq.check("transfer", mf, _Cfg(out, nuclei_source="he-mask"))
     assert "missing or empty" in str(e.value)
 
 
@@ -193,7 +195,7 @@ def test_prereq_rejects_an_empty_output_dir(tmp_path):
     mf = _manifest(out, "breast", done=("annotate", "segment"))
     paths.masks_dir(out, "breast").mkdir(parents=True)
     with pytest.raises(SystemExit):
-        prereq.check("transfer", mf, _Cfg(out))
+        prereq.check("transfer", mf, _Cfg(out, nuclei_source="he-mask"))
 
 
 def test_every_stage_is_covered_by_the_prereq_table():

@@ -3,6 +3,7 @@ idempotent: the DAG skips it when the manifest marks it done.
 """
 from __future__ import annotations
 
+import collections
 from pathlib import Path
 from typing import Any
 
@@ -111,6 +112,18 @@ class SlideReader:
             self.height, self.width = int(shape[1]), int(shape[2])
         else:
             self.height, self.width = int(shape[0]), int(shape[1])
+        # Per-reader window cache. Tile stages slide a stride-tile grid and
+        # call ``window`` thousands of times; the same (y0, x0) box can be
+        # requested repeatedly when segment + tile + downstream re-validate
+        # reopen the slide. OS page cache helps but does not survive across
+        # processes (worker pool, see tile stage) so we keep a small explicit
+        # cache per reader. ``OrderedDict`` with FIFO eviction is more
+        # deterministic than ``functools.lru_cache`` because the entries are
+        # all the same size in practice (a tile-grid window); LRU buys little.
+        # 200 tiles * 1024*1024*3 uint8 = 600 MB at the worst end; smaller
+        # windows shrink this proportionally.
+        self._window_cache: collections.OrderedDict = collections.OrderedDict()
+        self._window_cache_limit = 200
 
     def _open_lazy(self, series):
         """Full-resolution sliceable array backed by the file, or None.
@@ -142,13 +155,24 @@ class SlideReader:
     def window(self, y0: int, x0: int, h: int, w: int):
         import numpy as np
 
+        key = (int(y0), int(x0), int(h), int(w))
+        cached = self._window_cache.get(key)
+        if cached is not None:
+            # Touch for FIFO semantics: re-insert moves the entry to the back.
+            self._window_cache.move_to_end(key)
+            return cached
         if self._z is None:
-            return self._arr[y0:y0 + h, x0:x0 + w]
-        if self._channel_first:
-            raw = self._z[:, y0:y0 + h, x0:x0 + w]
+            arr = self._arr[y0:y0 + h, x0:x0 + w]
         else:
-            raw = self._z[y0:y0 + h, x0:x0 + w]
-        return _to_rgb8(np.asarray(raw), self.axes)
+            if self._channel_first:
+                raw = self._z[:, y0:y0 + h, x0:x0 + w]
+            else:
+                raw = self._z[y0:y0 + h, x0:x0 + w]
+            arr = _to_rgb8(np.asarray(raw), self.axes)
+        self._window_cache[key] = arr
+        if len(self._window_cache) > self._window_cache_limit:
+            self._window_cache.popitem(last=False)
+        return arr
 
     def _close_handles(self):
         for attr in ("_store", "_tf"):
@@ -161,6 +185,9 @@ class SlideReader:
                 setattr(self, attr, None)
 
     def close(self):
+        # Drop cache before handles: the cached ndarray may hold references
+        # to zarr / tifffile buffers that we are about to close.
+        self._window_cache.clear()
         self._z = None
         self._arr = None
         self._close_handles()

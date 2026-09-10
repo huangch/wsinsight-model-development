@@ -43,6 +43,8 @@
 #              STAIN_NORMALIZATION=1).
 #   GPUS       device index (default auto). 'cpu' segments without a GPU but
 #              cannot train, so it needs RUN_SKIP to stop before split.
+#   CELLPOSE_BATCH_SIZE  cellpose batch size (default 16). Only forwarded
+#                          when SEGMENTER=cellpose; no effect on stardist.
 #   ENVBIN     conda env bin holding wsitrain + torch
 set -euo pipefail
 
@@ -89,6 +91,12 @@ STAGE_FLAGS=()
 FORCE_FLAGS=()
 [ -n "${FORCE:-}" ] && FORCE_FLAGS=(--force)
 
+# --- cellpose batch (added by wsitrain redesign, see backup/pre-redesign tag) ---
+CP_BATCH_FLAGS=()
+if [ "$SEGMENTER" = "cellpose" ]; then
+  : "${CELLPOSE_BATCH_SIZE:=16}"
+  CP_BATCH_FLAGS=(--cellpose-batch-size "$CELLPOSE_BATCH_SIZE")
+fi
 STAIN_FLAG=()
 case "${STAIN_NORMALIZATION:-off}" in
   on|1|true|yes)
@@ -164,6 +172,7 @@ wsitrain run \
   "${ARCH_FLAGS[@]}" \
   "${SD_FLAGS[@]}" \
   "${STAIN_FLAG[@]}" \
+  "${CP_BATCH_FLAGS[@]}" \
   --norm-sample-size "${NORM_SAMPLE_SIZE:-256}" \
   --transform affine \
   --by-tile \

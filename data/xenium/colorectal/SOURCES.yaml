@@ -1,6 +1,6 @@
 # data/xenium/colorectal/SOURCES.yaml
 # Per-sample manifest for colorectal Xenium training data.
-# Mirror of the 'samples:' list in cellvit-training/tissue_configs/colorectal.yaml.
+# The `samples:` list below is the source of truth for this tissue.
 #
 # Each entry:
 #   - dataset_name : human-readable 10x dataset name (search this on

@@ -1,8 +1,7 @@
 """Path layout for a single run, anchored under the user's --output dir.
 
-Unlike the old in-repo pipeline (anchored at cellvit-training/), every path
-here is relative to the run's output directory, so wsinsight-train is fully
-portable and never writes into its own install tree. Workdir layout:
+Every path here is relative to the run's output directory, so wsinsight-train is
+fully portable and never writes into its own install tree. Workdir layout:
 
     <output>/
       run-<tissue>.yaml      resolved config

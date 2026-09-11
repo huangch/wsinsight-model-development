@@ -15,21 +15,14 @@ single-cell heads.
   CELLxGENE Census and annotates Xenium samples; runs upstream of the
   training pipeline.
 
-- [`cellvit-training/`](cellvit-training/) — H&E classifier-head training
-  workflow that fine-tunes CellViT-SAM-H-x40 from QuST-derived Xenium labels.
-  Driven by the tissue-agnostic [`pipeline/train.sh`](cellvit-training/pipeline/train.sh)
-  and [`pipeline/validate.sh`](cellvit-training/pipeline/validate.sh) scripts.
-  Per-tissue label-name table lives in
-  [`trainingset/<tissue>/label_map.yaml`](cellvit-training/trainingset/);
-  the per-fold YAML lives in
-  [`trainingset/<tissue>/train_configs/<backbone>/fold_*.yaml`](cellvit-training/trainingset/).
-  The QuPath project that anchors per-sample annotations is at
-  `data/qprj/project.qpproj` (machine-local).
+- [`wsinsight-train/cellvit-training/`](wsinsight-train/cellvit-training/) — the
+  vendored CellViT trainer plus its base checkpoints. It is not a standalone
+  package: `wsitrain` puts it on `PYTHONPATH` and runs it as a subprocess,
+  locating it through `$CELLVIT_ROOT`. It lives inside `wsinsight-train/` so
+  that package stays self-contained.
 
-  Currently set up: **`pantissue`** (12-class pan-tissue head). Promoted
-  heads land under [`cellvit-training/models/`](cellvit-training/) with a
-  small yaml side-car; the `.pth` checkpoint is git-ignored and published
-  separately on Hugging Face Hub.
+  Promoted heads land under `models/` with a small yaml side-car; the `.pth`
+  checkpoints are git-ignored and published separately on Hugging Face Hub.
 
 ## Data
 

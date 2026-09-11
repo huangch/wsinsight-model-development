@@ -25,9 +25,9 @@ The on-disk paths must match what the pipeline expects:
   `data/qprj/project.qpproj`: every image opened in it becomes an entry
   the headless QuPath wrappers iterate over. The QuPath project is
   git-ignored (large `.qpdata` files).
-- The int ↔ label-name table consumed at training time is
-  `cellvit-training/trainingset/<tissue>/label_map.yaml` (hand-authored,
-  tracked in git).
+- The int ↔ label-name table consumed at training time is written per run to
+  `models/<run>/trainingset/<tissue>/label_map.yaml` by the `wsitrain` split
+  stage.
 - KurtoRank → `data/census/<YYYY-MM-DD>/` (a SOMA mirror at a pinned date).
 
 If your filesystem layout differs, set the `PROJECT_ROOT` environment
@@ -90,8 +90,5 @@ QuPath script -p data/qprj/project.qpproj -e 'getQuPath().getProject().getImageL
 ```
 
 Every `*.ome.tif` you placed under `data/xenium/<tissue>/` should appear
-in the output. The headless wrappers
-(`cellvit-training/qupath/run_qust_pipeline.groovy`,
-`load_mapping.groovy`, `export_tiles.groovy`) discover each sample's
-`outs/` directory from the image URI — no separate manifest file is
-needed.
+in the output. `wsitrain` discovers each sample's `outs/` directory from
+the image URI — no separate manifest file is needed.

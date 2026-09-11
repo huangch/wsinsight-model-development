@@ -17,8 +17,8 @@ its 10x dataset name, the `he_image` stem, and the on-disk relative path.
 These files are the canonical machine-readable sample list. The QuPath
 project at `data/qprj/project.qpproj` is the runtime manifest — every
 image opened in it becomes an entry the headless wrappers iterate over.
-The int ↔ label-name mapping consumed at training time lives in
-[`cellvit-training/trainingset/<tissue>/label_map.yaml`](../../cellvit-training/trainingset/).
+The int ↔ label-name mapping consumed at training time is written per run to
+`models/<run>/trainingset/<tissue>/label_map.yaml` by the `wsitrain` split stage.
 
 | Tissue | Samples |
 |--------|--------:|
@@ -39,8 +39,8 @@ The int ↔ label-name mapping consumed at training time lives in
 | [tonsil](tonsil/SOURCES.yaml)         | 2 |
 
 The currently trained head (`pantissue`) consumes every sample listed
-above. To add a new tissue to the pipeline, follow the parent
-[README](../../cellvit-training/README.md#adding-a-new-tissue).
+above. To add a new tissue to the pipeline, follow the
+[wsinsight-train README](../../wsinsight-train/README.md).
 
 ## Tissue roadmap
 

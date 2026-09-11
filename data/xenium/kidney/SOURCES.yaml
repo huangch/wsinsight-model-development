@@ -3,9 +3,8 @@
 #
 # This is a stub manifest enumerating the publicly-available 10x
 # Xenium samples present on disk. The training pipeline for this
-# tissue is NOT yet configured (no cellvit-training/tissue_configs/kidney.yaml
-# exists). To enable training, author that YAML using the same
-# `samples:` list below as the source of truth.
+# tissue has not been trained yet. To train it, pass `--tissue kidney`
+# to wsitrain; the `samples:` list below is the source of truth.
 #
 # Each entry:
 #   - dataset_name : human-readable 10x dataset/sample folder name.

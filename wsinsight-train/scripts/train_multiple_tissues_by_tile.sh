@@ -76,6 +76,11 @@
 #   CELLPOSE_BATCH_SIZE  cellpose batch size (default 16). Only forwarded
 #                          when NUCLEI_SOURCE=he-mask and SEGMENTER=cellpose.
 #   ENVBIN     conda env bin holding wsitrain + torch
+#   WSITRAIN_DATA_DIR    input tree (default ../../data/xenium). data/ is far
+#              too large for a Git remote, so it is not part of this package;
+#              set this when wsinsight-train is checked out on its own.
+#   WSITRAIN_MODELS_DIR  parent of the per-run output dirs (default
+#              ../../models). Same reason.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -84,8 +89,14 @@ if [ "$#" -lt 1 ]; then
 fi
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "$HERE/../.." && pwd)"                    # wsinsight-model-development/
-CVT="$ROOT/cellvit-training"
+# cellvit-training lives inside this package so wsinsight-train stays
+# self-contained when split into its own repository.
+PKG="$(cd "$HERE/.." && pwd)"                        # wsinsight-train/
+CVT="$PKG/cellvit-training"
+# data/ and models/ are too large to ship with the package, so they stay in the
+# parent repo; set these when wsinsight-train is checked out on its own.
+DATA_ROOT="${WSITRAIN_DATA_DIR:-$(cd "$HERE/../.." && pwd)/data/xenium}"
+MODELS_ROOT="${WSITRAIN_MODELS_DIR:-$(cd "$HERE/../.." && pwd)/models}"
 # `wsi` is the only env on this host carrying wsitrain + torch + stardist.
 ENVBIN="${ENVBIN:-/opt/anaconda3/envs/wsi/bin}"
 export PATH="$ENVBIN:$PATH"
@@ -113,11 +124,11 @@ case "$TISSUE" in
   *) echo "ERROR: '$TISSUE' is a single tissue; use train_one_tissue_by_tile.sh." >&2; exit 2 ;;
 esac
 
-INPUT="${2:-$ROOT/data/xenium}"
+INPUT="${2:-$DATA_ROOT}"
 # Directory-safe scope name; the manifest is keyed per output+tissue, so each
 # subset must get its own --output or it will reuse another run's state.
 SLUG="$(echo "$TISSUE" | tr ',' '-')"
-OUT="${3:-$ROOT/models/${SLUG}_by_tile}"
+OUT="${3:-$MODELS_ROOT/${SLUG}_by_tile}"
 TASK="${TASK:-pantissue}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"

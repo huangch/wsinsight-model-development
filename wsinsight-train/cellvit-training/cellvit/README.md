@@ -6,9 +6,9 @@ layout to exist on disk after a clone.
 
 ```
 cellvit-training/cellvit/
-├── CellViT-plus-plus/         # upstream repo checkout (~few hundred MB)
-└── models/
-    └── CellViT-SAM-H-x40.pth  # base backbone (~2 GB)
+├── CellViT-plus-plus/         # upstream checkout, tracked as a git submodule
+└── models/                    # 7 pretrained backbones, 22 GB; see models/README.md
+    └── CellViT-SAM-H-x40.pth  # the only one the training configs need (~2.8 GB)
 ```
 
 ## CellViT-plus-plus checkout
@@ -16,11 +16,10 @@ cellvit-training/cellvit/
 **Source:** <https://github.com/TIO-IKIM/CellViT-plus-plus>
 **License:** see upstream repo (Apache-2.0 at time of writing).
 
+This is a git submodule, so a clone of the parent repo already pins the commit:
+
 ```bash
-cd cellvit-training/cellvit
-git clone https://github.com/TIO-IKIM/CellViT-plus-plus.git
-# Pin to the commit you want to use:
-cd CellViT-plus-plus && git checkout <commit_or_tag> && cd ..
+git submodule update --init --recursive
 ```
 
 The training wrappers (`cellvit-training/pipeline/train_tissue.sh`,
@@ -30,8 +29,8 @@ upstream internals.
 
 ## CellViT-SAM-H-x40.pth (base weights)
 
-**Source:** CellViT-plus-plus release page (HuggingFace / GitHub Releases).
-Look for `CellViT-SAM-H-x40.pth` and place it at
+Download location, the full seven-file inventory, and sha256 checksums are in
+[`models/README.md`](models/README.md). Place the file at
 `cellvit-training/cellvit/models/CellViT-SAM-H-x40.pth`.
 
 Configs reference it via `${CELLVIT_TRAINING_ROOT}/cellvit/models/CellViT-SAM-H-x40.pth`

@@ -134,7 +134,15 @@ core.*
 *.pid
 
 # ── wsinsight-train pipeline outputs (fully regenerable, never commit) ─────
+# Unanchored, so this also catches cellvit-training/cellvit/models/ (22 GB of
+# downloaded CellViT backbones) -- intended, but it hides that tree entirely.
 models/
+# Re-include just enough of it to ship the README that says what belongs there
+# and where to download it. Git cannot re-include a file whose parent directory
+# is excluded, so the directory is un-excluded first and its payload re-excluded.
+!wsinsight-train/cellvit-training/cellvit/models/
+wsinsight-train/cellvit-training/cellvit/models/**
+!wsinsight-train/cellvit-training/cellvit/models/README.md
 
 # ── Dev scratch (throwaway code/data; use these known-ignored locations) ────
 scratch/

@@ -37,6 +37,9 @@ docs = [
   "sphinx-copybutton",
 ]
 stardist = ["stardist", "tensorflow"]
+# The annotate stage shells out to the `kurtorank` console script rather than
+# importing it, so kurtorank stays an independently released package.
+annotate = ["kurtorank>=3.1"]
 # zarr lets the tile stage read windows instead of whole slides.
 lowmem = ["zarr"]
 # 2026-08-24: MCP server surface (`wsinsight-train-mcp` console script). Mirrors

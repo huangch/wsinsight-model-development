@@ -149,3 +149,6 @@ Untitled*.ipynb
 !**/*.ipynb
 **/bak/
 **/bak/**
+
+# Pfizer-internal registry push script; must never reach public GitHub.
+**/docker-build-push-pfizer.sh

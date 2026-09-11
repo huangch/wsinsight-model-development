@@ -146,6 +146,8 @@ stages the manifest already marks done.
 | `--tissue` | string | `pantissue` | Tissue name; also namespaces the saved config and the model folder. |
 | `--output` | path | derived | Output root. |
 | `--force` | flag | off | Re-run stages the manifest already marks done. |
+| `--redo-<stage>` | flag | off | Wipe one stage and re-run it. Repeatable; cascades to every later stage. |
+| `--samples ID …` | list | all | Restrict the run to named samples (shard work across processes). |
 | `--config FILE` | path | none | YAML of settings, applied over the saved config and under these flags. |
 | `--reset-config` | flag | off | Ignore the config an earlier command saved in `--output`; start from shipped defaults plus these flags. |
 | `--show-config` | flag | off | List every setting and where its value came from, including defaults. |
@@ -266,11 +268,38 @@ which samples are usable, so `segment` and `transfer` must be given the same
 value. Setting it on one and not the other silently trains on a different
 cohort than you validated.
 
-### 4.8 `--gpus cpu` only disables the segmenter
+### 4.8 `--gpus` is Docker-style, and training is single-device
 
-`--gpus cpu` turns off GPU **segmentation**. CellViT training still needs a
-real device index, and `split` rejects `cpu`. There is no fully-CPU end2end
-training path.
+`all` (default) = every visible CUDA device, `0` / `0,1` = an explicit subset,
+`cpu` = no GPU.
+
+Multi-GPU applies to the **`segment` fan-out only**, and only when
+`--nuclei-source he-mask` puts that stage in play. CellViT's cell-classifier
+builds `f"cuda:{gpu}"` with no DataParallel path, so **train uses the first id**
+and prints which one. A comma-joined list would reach torch as the invalid
+device `cuda:0,1`.
+
+`--gpus cpu` cannot train: stop before `split` with
+`--run-skip split train validate export report`.
+
+### 4.8b `--nuclei-source` decides whether `segment` runs at all
+
+`xenium-coords` (default) projects the Xenium centroid onto H&E and skips
+`segment`; `he-mask` segments H&E and looks up the mask nucleus per cell.
+`--segmenter` is consulted only on the `he-mask` path — seconds versus ~25 min
+of GPU per cohort.
+
+### 4.8c Re-running one stage
+
+```bash
+wsitrain run ... --redo-train      # wipe train, re-run it and everything after
+wsitrain run ... --redo-split      # also re-renders the CellViT config
+```
+
+Redo **cascades**: a later stage's output derived from the one you named, so it
+is invalidated too. Changing a setting the manifest tracks (`--epochs`, `--task`,
+`--tile-px`, …) does this automatically; `--redo-*` is for re-running *without*
+a settings change.
 
 ### 4.9 Segmenter choice
 

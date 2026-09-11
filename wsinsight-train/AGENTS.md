@@ -40,6 +40,20 @@ deployed model's geometry, and a wrong guess trains a model that scores well
 here and misclassifies under wsinsight. `RunConfig.__post_init__` refuses to
 build without them.
 
+## Where training cells come from
+
+`--nuclei-source` is orthogonal to `--object-detection`:
+
+| | `xenium-coords` (default) | `he-mask` |
+|---|---|---|
+| `segment` | early-returns `{"skipped": ...}` | runs the segmenter |
+| nucleus id | the Xenium `cell_id` (a string, never cast to int) | mask label under the projected centroid |
+| `--segmenter` | **not passed at all** by `scripts/` | honoured |
+| cost | seconds | ~25 min GPU per cohort |
+
+Because `segment` is skipped, `prereq` must not demand it on this path, and the
+multi-GPU `segment` fan-out in `dag.run` only engages for `he-mask`.
+
 ## Stages
 
 `annotate → segment → transfer → tile | crop → split → train → validate →
@@ -47,11 +61,31 @@ export → report`. Each is also a command. Completed stages are skipped on
 re-run (manifest-based); settings are inherited from the `run-<tissue>.yaml`
 the previous command wrote into `--output`.
 
-**Adding a stage touches seven places** — miss one and a test fails:
-`__init__.STAGES`, `stages.STAGE_FUNCS`, `cli._STAGE_HELP`, `cli._STAGE_FLAGS`,
-`prereq.PREREQUISITES` (+ `_ARTIFACTS`), `defaults/run.yaml`, and
-`tests/test_stage_commands.EXPECTED_FLAGS`. `defaults/run.yaml` is the source of
-the provenance map, so a field missing there `KeyError`s `_print_config`.
+**Adding a stage touches eight places** — miss one and a test fails:
+`__init__.STAGES`, `stages.STAGE_FUNCS`, `stages._STAGE_WIPES`,
+`cli._STAGE_HELP`, `cli._STAGE_FLAGS`, `prereq.PREREQUISITES` (+ `_ARTIFACTS`),
+`defaults/run.yaml`, and `tests/test_stage_commands.EXPECTED_FLAGS`.
+`defaults/run.yaml` is the source of the provenance map, so a field missing
+there `KeyError`s `_print_config`.
+
+## Re-running: `--redo-<stage>` and the wipe rules
+
+Three invariants, each of which has already been violated once:
+
+1. **A wipe deletes only what its own stage produces, or a later stage's.**
+   Cascade re-runs later stages, so clearing their files is safe; an earlier
+   stage stays marked done, so clearing its files strands the run.
+   `_wipe_train` used to delete the config `split` renders → `missing train
+   config`. Locked by `test_no_wipe_reaches_an_upstream_stages_artefacts`.
+2. **Redo cascades, and unmarks every affected stage** — not just the ones this
+   invocation runs. `--run-skip` or an interrupt otherwise leaves the manifest
+   claiming output the wipe deleted.
+3. **Wiping waits until the run is known viable.** `dag.run` defers its lasting
+   writes past the sample checks; the wipe is the most destructive of them and
+   must not run before a typo'd `--input` has been rejected.
+
+`annotate` deliberately has **no wipe**: its `celltype_assignment_*.csv` live in
+the user's data tree, not under `--output`.
 
 ## Stain normalization
 
@@ -83,9 +117,41 @@ QuST-produced `hne_cell_classification` model happens to declare.
   to unset, so "off" cannot be expressed by omission.
 - Every command except `check` runs as a background job.
 
+## The CellViT config template is the only channel to the trainer
+
+`defaults/train_config_template.yaml` is rendered by `split`, read by `train`.
+A setting hardcoded there is a **flag that silently lies**: `epochs`, `lr`,
+`weight_decay` and `normalize_stains_*` were all fixed values, so `--epochs 50`
+trained for 10 and `--no-stain-normalization` still ran Macenko. Anything with
+a `RunConfig` field must be substituted, and
+`test_every_template_placeholder_is_supplied` fails on an orphan either way.
+
+Two consequences:
+
+- **A newly-substituted key becomes load-bearing**, so it must join
+  `manifest._INVALIDATES` (`epochs`/`lr`/`weight_decay` → `split`, which renders
+  the config). The map's "perf-only knobs are deliberately absent" comment was
+  true only while they were inert.
+- **What CellViT cannot honour must fail loudly**, not be dropped:
+  `config.check_effective` refuses a run whose `--batch-size`/`--num-workers`/
+  `--pretrained` the end2end path would ignore (CellViT hardcodes its
+  DataLoader to 8). It fires only when the value came from a flag/config file
+  *and* differs from the shipped default, so saved dumps still resume.
+
+`gpu:` is a scalar. `_gpu_ids()` resolves `--gpus`; `_gpu_id()` returns the
+first, because CellViT builds `f"cuda:{gpu}"` and has no DataParallel path — a
+comma-joined list reaches torch as the invalid device `cuda:0,1`.
+
 ## Tests & lint
 
-- `python -m pytest tests/` (467 tests). ruff is clean; keep it that way.
+- `python -m pytest tests/` (492 tests; 8 in `test_review_fixes.py` +
+  `test_subprocess_stages.py` fail wherever `shutil.which("python3")` resolves
+  to an interpreter without `wandb` — environmental, not a regression). ruff is
+  clean; keep it that way.
+- Unit tests over the wipe/manifest helpers are not enough: every redo bug so
+  far only appeared once the manifest, `--run-skip` and stage ordering
+  interacted. `tests/test_pipeline_e2e.py` runs real stages with a fake
+  segmenter — put redo/force coverage there.
 - Input contract: a sample is any dir with `outs/cells.parquet` and a sibling
   `*_he_*image.ome.tif`. `wsitrain check` reports what it found.
 

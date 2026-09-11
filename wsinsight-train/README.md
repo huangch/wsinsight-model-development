@@ -4,9 +4,10 @@ End-to-end, **headless** CLI to train [WSInsight](https://github.com/huangch/wsi
 CellViT cell-classification heads from paired **10x Xenium + H&E** — no GUI, no
 QuPath required. Distribution `wsinsight-train`; package + command `wsitrain`.
 
-KurtoRank labels Xenium cells, nuclei are segmented on H&E (StarDist default,
-Cellpose optional), labels transfer by ST2WSI registration (SIFT affine by
-default, optional bUnwarpJ B-spline), tiles train a CellViT head, and the
+KurtoRank labels Xenium cells, those cells are placed on the H&E (Xenium
+centroids by default, or a StarDist/Cellpose nucleus mask with
+`--nuclei-source he-mask`), labels transfer by ST2WSI registration (SIFT affine
+by default, optional bUnwarpJ B-spline), tiles train a CellViT head, and the
 result is exported as a wsinsight-ready model folder.
 
 ---
@@ -122,20 +123,66 @@ choices the flags accept. `input`, `tissue` and `output` in the file are ignored
 verbatim.
 
 Key flags: `--task` (label space: `sthelar_full|sthelar_coarse|sthelar_cancer_normal|
-hne|pantissue|pannuke|lcp`, default `sthelar_full`), `--segmenter cellpose|stardist`,
-`--transform affine+bspline|affine|none`, `--tune N` (auto-tune iters), `--gpus auto`.
-`--gpus cpu` disables the GPU for segmentation only; CellViT training needs a
-device index, so the split stage refuses it.
+hne|pantissue|pannuke|lcp`, default `sthelar_full` — note the `scripts/` pass
+`pantissue`), `--segmenter cellpose|stardist`,
+`--transform affine+bspline|affine|none`, `--tune N` (auto-tune iters).
+
+`--nuclei-source` decides where training cell positions come from:
+`xenium-coords` (default) projects the Xenium centroid onto H&E and **skips
+`segment` entirely**; `he-mask` runs the segmenter on H&E and looks up the mask
+nucleus per cell. `--segmenter` only matters on the `he-mask` path.
+
+`--gpus` is Docker-style: `all` (default) = every visible CUDA device, `0` or
+`0,1` = an explicit subset, `cpu` = no GPU. Multi-GPU applies to the `segment`
+fan-out; CellViT's cell-classifier is single-device, so **train uses the first
+id** and says so. `--gpus cpu` cannot train — stop before `split` with
+`--run-skip split train validate export report`.
+
+`--tile-workers N` shards the (pure-CPU) tile stage across cores, one slide per
+worker. `--samples ID …` restricts a run to named samples, for sharding work
+across processes.
+
+### Re-running a stage
+
+Completed stages are skipped on re-run. To force one:
+
+```bash
+wsitrain run ... --redo-train        # wipe train's artefacts and re-run
+wsitrain run ... --redo-split        # also re-renders the CellViT config
+wsitrain run ... --force             # wipe everything (legacy)
+```
+
+A `--redo-<stage>` flag exists for every stage and **cascades**: naming one
+invalidates every later stage, since their output derived from it. Changing a
+setting the manifest tracks does the same automatically, so `--redo-*` is for
+re-running without a settings change.
 
 ## Scripts
 
 ```bash
 bash scripts/train_one_tissue_by_tile.sh breast [input_dir] [output_dir]
-bash scripts/train_tissues_by_tile.sh breast,lung [input_dir] [output_dir]  # pooled subset
+bash scripts/train_multiple_tissues_by_tile.sh breast,lung [input_dir] [output_dir]  # pooled subset
 bash scripts/train_pantissue_by_tile.sh [input_dir] [output_dir]            # all tissues pooled
 ```
-Env overrides: `TASK`, `SEGMENTER`, `STARDIST_MODEL_DIR`, `VAL_FRAC`, `SEED`,
-`TUNE`, `RUN_SKIP`, `FORCE`, `GPUS`, `ENVBIN`, `CELLVIT_ROOT`.
+
+Each has a `_by_slide` counterpart that holds out whole slides instead of tiles.
+
+Env overrides: `TASK`, `SEGMENTER`, `NUCLEI_SOURCE`, `TRANSFORM`,
+`STARDIST_MODEL_DIR`, `VAL_FRAC`, `SEED`, `TUNE`, `RUN_SKIP`, `FORCE`, `REDO`,
+`GPUS`, `TILE_WORKERS`, `ARCHITECTURE`, `STAIN_NORMALIZATION`,
+`NORM_SAMPLE_SIZE`, `CELLPOSE_BATCH_SIZE`, `ENVBIN`, `CELLVIT_ROOT`.
+
+The scripts default to `TASK=pantissue`, `NUCLEI_SOURCE=xenium-coords` and
+`TRANSFORM=affine+bspline` — not wsitrain's own shipped defaults. On the
+end2end path they force `--no-stain-normalization` (CellViT trains on raw H&E,
+and Macenko raises on near-uniform crops) and say so if you set it.
+They also export `COLUMNS` from the tty so progress bars and the CellViT
+summary table follow the real terminal width even when output is redirected.
+
+```bash
+REDO=train TILE_WORKERS=8 bash scripts/train_one_tissue_by_tile.sh breast
+```
+
 Each script passes `--reset-config`, so its flags alone define the run.
 Caches default to `/workspace/.cellpose` + `/workspace/.torch`; tmp to `/tmp`.
 

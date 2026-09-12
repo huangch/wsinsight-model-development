@@ -95,7 +95,8 @@ def test_stardist_downloads_when_no_folder_given(monkeypatch, tmp_path):
             return np.zeros(img.shape[:2], np.int32), None
 
     _install_fake_stardist(monkeypatch, FakeModel)
-    # Point the cache probe at an empty dir so the download path is taken.
+    # Point every local source at a missing dir so the download path is taken.
+    monkeypatch.setattr(segment, "BUNDLED_STARDIST", tmp_path / "no-bundled")
     monkeypatch.setattr(segment, "STARDIST_CACHE", tmp_path / "empty")
 
     seg = segment.get_segmenter("stardist")
@@ -124,6 +125,7 @@ def test_stardist_prefers_the_unpacked_cache(monkeypatch, tmp_path):
     cache = tmp_path / "StarDist2D"
     (cache / "2D_versatile_he").mkdir(parents=True)
     (cache / "2D_versatile_he" / "config.json").write_text("{}")
+    monkeypatch.setattr(segment, "BUNDLED_STARDIST", cache)
     monkeypatch.setattr(segment, "STARDIST_CACHE", cache)
 
     seg = segment.get_segmenter("stardist")
@@ -152,6 +154,7 @@ def test_explicit_dir_beats_the_cache(monkeypatch, tmp_path):
     cache = tmp_path / "StarDist2D"
     (cache / "2D_versatile_he").mkdir(parents=True)
     (cache / "2D_versatile_he" / "config.json").write_text("{}")
+    monkeypatch.setattr(segment, "BUNDLED_STARDIST", tmp_path / "no-bundled")
     monkeypatch.setattr(segment, "STARDIST_CACHE", cache)
 
     seg = segment.get_segmenter("stardist", stardist_model_dir="/explicit")
@@ -176,6 +179,9 @@ def _stardist_probe(monkeypatch, tmp_path):
             return np.zeros(img.shape[:2], np.int32), None
 
     _install_fake_stardist(monkeypatch, FakeModel)
+    # Neutralize BOTH module-level sources: the shipped assets copy is on disk
+    # and would otherwise be found before the patched probes below.
+    monkeypatch.setattr(segment, "BUNDLED_STARDIST", tmp_path / "no-bundled")
     monkeypatch.setattr(segment, "STARDIST_CACHE", tmp_path / "empty")
     return seen
 

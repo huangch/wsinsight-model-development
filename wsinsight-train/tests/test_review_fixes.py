@@ -3,6 +3,7 @@ path safety, config carry-over, and the tqdm terminal hardening.
 """
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import os
@@ -73,6 +74,10 @@ def segment_probe(tmp_path, monkeypatch):
     sample = Sample("breast__s1", "breast", tmp_path, he, True)
 
     def _run(cfg):
+        # These tests own the he-mask semantics (mask reuse keyed on how the
+        # mask was made); the shipped default source (xenium-coords) skips the
+        # segment stage entirely, so opt in explicitly.
+        cfg = dataclasses.replace(cfg, nuclei_source="he-mask")
         before = len(calls)
         stages.segment(cfg, [sample], cfg.output)
         return len(calls) - before
@@ -299,8 +304,11 @@ def test_tile_stem_carries_row_and_column_separately():
 # --------------------------------------------------------------------------
 
 def _transfer_cfg(cfg_factory, **over):
+    # he-mask: these tests exercise the mask-lookup branch and its failure
+    # messages; the shipped xenium-coords default comes from the stage.
     defaults = dict(mpp=1.0, transform="none", match_radius_px=4,
-                    min_match_rate=0.0, task="sthelar_full")
+                    min_match_rate=0.0, task="sthelar_full",
+                    nuclei_source="he-mask")
     defaults.update(over)
     return cfg_factory(**defaults)
 
@@ -478,12 +486,39 @@ def test_a_child_process_gets_the_ascii_bars_and_the_winch_handler(tmp_path):
     assert out.stdout.strip() == "' =' True True", out.stdout
 
 
+class _FakeStream:
+    """Empty, always-at-EOF stream; BytesIO.fileno() would raise."""
+
+    def fileno(self):
+        return 0
+
+    def read(self, n):
+        return b""
+
+    def close(self):
+        pass
+
+
+class _FakeProc:
+    """Minimal Popen stand-in: empty output stream, exit 0."""
+
+    def __init__(self, args, **kw):
+        self.args = args
+        self.stdout = _FakeStream()
+        self.returncode = 0
+
+    def wait(self):
+        return 0
+
+
 @pytest.mark.parametrize("stage", ["train", "export"])
 def test_cellvit_stages_launch_with_the_shim(stage, cfg_factory, tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setenv("CELLVIT_ROOT", str(tmp_path))
     # The stages import subprocess inside the function, so patch the module.
+    # export invokes subprocess.run; train streams the runner through Popen.
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: seen.update(kw) or None)
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or _FakeProc(cmd, **kw))
     cfg = cfg_factory()
     if stage == "train":
         paths.train_config_path(cfg.output, cfg.tissue, cfg.backbone,

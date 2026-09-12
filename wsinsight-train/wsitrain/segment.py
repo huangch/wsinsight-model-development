@@ -17,6 +17,10 @@ import numpy as np
 # Where csbdeep unpacks pretrained StarDist models when KERAS_HOME is unset.
 STARDIST_CACHE = Path(os.path.expanduser("~/.keras/models/StarDist2D"))
 
+# Shipped with the package (wsinsight-train/assets/StarDist2D), so a clone carries
+# its own copy and an offline host never touches the network.
+BUNDLED_STARDIST = Path(__file__).resolve().parent.parent / "assets" / "StarDist2D"
+
 
 def _stardist_search_dirs() -> list[Path]:
     """Candidate parents of a csbdeep model folder, most specific first."""
@@ -24,6 +28,7 @@ def _stardist_search_dirs() -> list[Path]:
     override = os.environ.get("WSITRAIN_STARDIST_DIR")
     if override:
         dirs.append(Path(override).expanduser())
+    dirs.append(BUNDLED_STARDIST)
     keras_home = os.environ.get("KERAS_HOME")
     if keras_home:
         dirs.append(Path(keras_home).expanduser() / "models" / "StarDist2D")

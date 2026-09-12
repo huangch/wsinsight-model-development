@@ -52,7 +52,8 @@ weight_cap: 10.0
 # training
 backbone: SAM-H-x40
 fold: fold_0
-task: sthelar_full
+# pantissue matches the train_*.sh wrappers and every shipped head.
+task: pantissue
 # GPU selection (Docker-style):
 #   all  -> torch.cuda.device_count() visible devices (segment fans out,
 #           one CellViT subprocess per device, train picks the first).

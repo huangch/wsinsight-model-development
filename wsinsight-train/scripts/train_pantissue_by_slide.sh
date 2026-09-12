@@ -13,7 +13,7 @@
 # a per-tissue slide holdout, NOT a leave-site-out evaluation -- every site
 # with >= 2 slides is represented on both sides of the split. If you need
 # genuine leave-site-out, hold the sites out yourself by running one head per
-# site subset with train_tissues_by_slide.sh.
+# site subset with train_multiple_tissues_by_slide.sh.
 #
 # Any slide that is the sole carrier of a class is tile-split instead, so the
 # class can appear on both sides; the split then reports mode

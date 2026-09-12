@@ -13,16 +13,48 @@ from wsitrain.dataset import Sample
 from wsitrain.stages import annotate, export, report, train, validate
 
 
+class _FakeStream:
+    """Empty, always-at-EOF stream; BytesIO.fileno() would raise."""
+
+    def fileno(self):
+        return 0
+
+    def read(self, n):
+        return b""
+
+    def close(self):
+        pass
+
+
+class _FakeProc:
+    def __init__(self, args, **kw):
+        self.args = args
+        self.stdout = _FakeStream()
+        self.returncode = 0
+
+    def wait(self):
+        return 0
+
+
 @pytest.fixture
 def recorder(monkeypatch):
-    """Capture subprocess.run invocations instead of executing them."""
+    """Capture subprocess invocations instead of executing them.
+
+    export/report invoke subprocess.run; train streams the runner through
+    Popen, so both are recorded.
+    """
     calls = []
 
     def fake_run(cmd, **kw):
         calls.append({"cmd": [str(c) for c in cmd], **kw})
         return subprocess.CompletedProcess(cmd, 0)
 
+    def fake_popen(cmd, **kw):
+        calls.append({"cmd": [str(c) for c in cmd], **kw})
+        return _FakeProc(cmd, **kw)
+
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
     return calls
 
 
@@ -186,7 +218,9 @@ def test_train_invokes_trainer_with_config(tmp_path, cfg_factory, monkeypatch, r
 
     call = recorder[0]
     assert str(cfg_path) in call["cmd"]
-    assert call["cmd"][1].endswith("train_cell_classifier_head.py")
+    # train streams through the wandb-shim runner: [python, runner, trainer, ...]
+    assert call["cmd"][1].endswith("_wsitrain_cellvit_runner.py")
+    assert call["cmd"][2].endswith("train_cell_classifier_head.py")
     # The tqdm shim leads; CellViT's root still has to be importable.
     shim, _, cellvit = call["env"]["PYTHONPATH"].partition(os.pathsep)
     assert shim.endswith("tqdmshim")

@@ -117,7 +117,7 @@ TISSUE="$1"
 case "$TISSUE" in
   *,*|*+*|pantissue)
     echo "ERROR: '$TISSUE' is not a single tissue." >&2
-    echo "       Use train_tissues_by_tile.sh for a subset, or" >&2
+    echo "       Use train_multiple_tissues_by_tile.sh for a subset, or" >&2
     echo "       train_pantissue_by_tile.sh for all tissues." >&2
     exit 2 ;;
 esac

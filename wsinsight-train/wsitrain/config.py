@@ -85,7 +85,10 @@ class RunConfig:
     # training
     backbone: str = "SAM-H-x40"
     fold: str = "fold_0"
-    task: str = "sthelar_full"
+    # pantissue matches the train_*.sh wrappers and every shipped head; a bare
+    # `wsitrain run` without --task would otherwise land on the sptxinsight
+    # vocabulary sthelar_full.
+    task: str = "pantissue"
     gpus: str = "auto"
     tune: int = 0                        # 0 = single run; N = auto-tune iterations
 

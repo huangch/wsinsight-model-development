@@ -276,13 +276,26 @@ def compute_png_norm_stats(images_dir: Path, max_tiles: int = 5000,
     rng = np.random.default_rng(seed)
     take = min(int(max_tiles), len(paths))
     idx = np.sort(rng.choice(len(paths), size=take, replace=False))
-    chunks = []
+    # Streamed sum/sumsq: a 1024px tile is 24 MB in float64, and holding
+    # max_tiles of them stacked (plus std's internal arr-arrmean copy) peaks
+    # at ~250 GB. Accumulating per tile is mathematically identical at
+    # float64 precision and peaks at one tile.
+    n_px = 0
+    ch_sum = None
+    ch_sqsum = None
     for i in idx:
         with Image.open(paths[int(i)]) as im:
-            chunks.append(np.asarray(im, dtype="float64") / 255.0)
-    stacked = np.concatenate(chunks, axis=0)
-    mean = stacked.mean(axis=(0, 1, 2))
-    std = stacked.std(axis=(0, 1, 2))
+            a = np.asarray(im, dtype="float64") / 255.0
+        if ch_sum is None:
+            ch_sum = np.zeros(a.shape[2], dtype="float64")
+            ch_sqsum = np.zeros(a.shape[2], dtype="float64")
+        n_px += a.shape[0] * a.shape[1]
+        ch_sum += a.sum(axis=(0, 1))
+        ch_sqsum += (a * a).sum(axis=(0, 1))
+    if n_px == 0:
+        raise RuntimeError(f"no decodable PNG tiles under {images_dir}")
+    mean = ch_sum / n_px
+    std = np.sqrt(np.maximum(ch_sqsum / n_px - mean * mean, 0.0))
     return mean.tolist(), std.tolist()
 
 

@@ -52,13 +52,6 @@ cellvit-training/**/*.ckpt
 cellvit-training/cellvit/models/
 
 # ── StarDist pretrained weights (downloaded on demand into ~/.keras) ───────
-# csbdeep writes these next to the CWD when no basedir is given, which drops a
-# ~5.8 MB weights_best.h5 into the repo root. wsitrain resolves the model from
-# ~/.keras/models/StarDist2D (or --stardist-model-dir), so the copies here are
-# a cache, not a source.
-StarDist2D/
-stardist_models/
-
 # ── QuPath projects (large, machine-local; per-image .qpdata is huge) ───────
 cellvit-training/qprj/
 kurtorank/qprj/
@@ -137,6 +130,9 @@ core.*
 # Unanchored, so this also catches cellvit-training/cellvit/models/ (22 GB of
 # downloaded CellViT backbones) -- intended, but it hides that tree entirely.
 models/
+# Prior-run snapshot of models/, not a models/ subdir, so the rule above
+# misses it; matches cellvit-training/cellvit/models the same way.
+models.old/
 # Re-include just enough of it to ship the README that says what belongs there
 # and where to download it. Git cannot re-include a file whose parent directory
 # is excluded, so the directory is un-excluded first and its payload re-excluded.

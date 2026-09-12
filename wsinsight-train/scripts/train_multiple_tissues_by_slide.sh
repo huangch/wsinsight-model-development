@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Example 3 of 3 -- MULTI-TISSUE (subset) training with a SLIDE-LEVEL split.
 #
-# Slide-level counterpart of train_tissues_by_tile.sh. Pools a chosen subset of
+# Slide-level counterpart of train_multiple_tissues_by_tile.sh. Pools a chosen subset of
 # tissues into one head, e.g. the epithelial-rich group, and holds out whole
 # slides so no tile from a validation slide is ever seen in training.
 #
@@ -19,9 +19,9 @@
 # "slide-level+hybrid". Read the [split] lines in the run log before quoting
 # the mode anywhere.
 #
-# Usage: bash scripts/train_tissues_by_slide.sh <tissue,tissue,...> [input_dir] [output_dir]
-#   e.g. bash scripts/train_tissues_by_slide.sh breast,lung
-#        bash scripts/train_tissues_by_slide.sh breast,lung,colorectal
+# Usage: bash scripts/train_multiple_tissues_by_slide.sh <tissue,tissue,...> [input_dir] [output_dir]
+#   e.g. bash scripts/train_multiple_tissues_by_slide.sh breast,lung
+#        bash scripts/train_multiple_tissues_by_slide.sh breast,lung,colorectal
 #
 # Tissue names are the directory names under the input tree (bone, brain,
 # breast, cervix, colorectal, heart, kidney, liver, lung, lymph_node, ovary,
@@ -98,7 +98,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: bash scripts/train_tissues_by_slide.sh <tissue,tissue,...> [input_dir] [output_dir]" >&2
+  echo "Usage: bash scripts/train_multiple_tissues_by_slide.sh <tissue,tissue,...> [input_dir] [output_dir]" >&2
   exit 2
 fi
 

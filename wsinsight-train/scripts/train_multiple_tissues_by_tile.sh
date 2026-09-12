@@ -5,9 +5,9 @@
 # group. Useful when single-tissue heads are starved of slides but pantissue
 # dilutes the label space with morphologies you do not care about.
 #
-# Usage: bash scripts/train_tissues_by_tile.sh <tissue,tissue,...> [input_dir] [output_dir]
-#   e.g. bash scripts/train_tissues_by_tile.sh breast,lung
-#        bash scripts/train_tissues_by_tile.sh breast,lung,colorectal
+# Usage: bash scripts/train_multiple_tissues_by_tile.sh <tissue,tissue,...> [input_dir] [output_dir]
+#   e.g. bash scripts/train_multiple_tissues_by_tile.sh breast,lung
+#        bash scripts/train_multiple_tissues_by_tile.sh breast,lung,colorectal
 #
 # Tissue names are the directory names under the input tree (bone, brain,
 # breast, cervix, colorectal, heart, kidney, liver, lung, lymph_node, ovary,
@@ -84,7 +84,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
-  echo "Usage: bash scripts/train_tissues_by_tile.sh <tissue,tissue,...> [input_dir] [output_dir]" >&2
+  echo "Usage: bash scripts/train_multiple_tissues_by_tile.sh <tissue,tissue,...> [input_dir] [output_dir]" >&2
   exit 2
 fi
 

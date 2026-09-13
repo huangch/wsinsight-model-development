@@ -156,12 +156,28 @@ def test_slide_level_split_keeps_slides_whole(label_dir_factory):
     assert set(res.train_slides).isdisjoint(res.val_slides)
 
 
-def test_sole_carrier_slide_is_tile_split(label_dir_factory):
+def test_sole_carrier_slide_is_pinned_to_train(label_dir_factory):
     tiles = {f"breast__{s}_tile_{i:05d}": [0] for s in ("a", "b", "c") for i in range(4)}
     tiles["breast__rare_tile_00000"] = [9]
     tiles["breast__rare_tile_00001"] = [9]
     res = splits.split_tiles(label_dir_factory(tiles), by_slide=True)
-    assert "hybrid" in res.mode
+    assert set(res.train_slides).isdisjoint(res.val_slides)
+    assert "breast__rare" in res.train_slides
+    assert 9 in res.val_missing_classes
+
+
+def test_slide_split_refuses_when_too_few_free_slides(label_dir_factory):
+    # Every slide solely carries a class, so nothing can be held out whole.
+    tiles = {f"breast__{s}_tile_00000": [i] for i, s in enumerate(("a", "b"))}
+    with pytest.raises(RuntimeError, match="sole carrier"):
+        splits.split_tiles(label_dir_factory(tiles), by_slide=True)
+
+
+def test_unreachable_val_frac_warns(label_dir_factory):
+    tiles = {f"breast__{s}_tile_{i:05d}": [0, 1] for s in ("a", "b", "c")
+             for i in range(2)}
+    with pytest.warns(RuntimeWarning, match="not reachable"):
+        splits.split_tiles(label_dir_factory(tiles), by_slide=True, val_frac=0.01)
 
 
 def test_write_split_creates_both_files(tmp_path):

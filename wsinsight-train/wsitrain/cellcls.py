@@ -301,7 +301,7 @@ def compute_png_norm_stats(images_dir: Path, max_tiles: int = 5000,
 
 def train_classifier(train_files, val_files, *, architecture: str, patch_px: int,
                      num_classes: int, mean, std, out_dir: Path,
-                     epochs: int = 50, batch_size: int = 128, lr: float = 1e-4,
+                     epochs: int = 100, batch_size: int = 128, lr: float = 1e-4,
                      weight_decay: float = 1e-4, num_workers: int = 8,
                      pretrained: bool = False, class_weights=None,
                      device: str | None = None) -> dict[str, Any]:

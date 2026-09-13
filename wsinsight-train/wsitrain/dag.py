@@ -27,6 +27,36 @@ _REQUIRED_OUTPUT = {
     "crop": "cells",
 }
 
+# Stage -> a light disk-presence probe for its product. The manifest can claim
+# a stage is done while its product is gone (a failed export marked done on the
+# checkpoint_ok fallback, a wiped results dir), and resume would then silently
+# skip it. train's checkpoint directory name is the trainer's decision, so its
+# probe is the per-tissue log root having a checkpoints/ leaf; the other two are
+# deterministic file names wsinsight itself writes.
+def _product_missing(cfg: RunConfig, out: Path, stage: str) -> str | None:
+    import glob as _glob
+
+    from .paths import models_dir, report_dir
+
+    if stage == "train":
+        root = out / "logs" / _slug(cfg.tissue)
+        if not (root.is_dir() and any(root.glob("*/checkpoints"))
+                or any(_glob.glob(str(root / "checkpoints")))):
+            return str(root / "<run>/checkpoints")
+        return None
+    if stage == "export":
+        p = models_dir(out, cfg.tissue) / "main" / "torchscript_model.pt"
+        return None if p.is_file() else str(p)
+    if stage == "report":
+        p = report_dir(out, cfg.tissue) / "scores.json"
+        return None if p.is_file() else str(p)
+    return None
+
+
+def _slug(tissue: str) -> str:
+    out = tissue.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    return out.strip(".") or "unnamed"
+
 
 
 def _chunked(items, k):
@@ -239,8 +269,16 @@ def run(cfg: RunConfig, *, only: str | None = None, skip: list[str] | None = Non
             print(f"[dag] invalidated {sorted(redo, key=STAGES.index)}")
     for stage in todo:
         if not (force or stage in redo) and mf.is_done(stage):
-            print(f"[{stage}] up-to-date — skipping")
-            continue
+            # A done status can outlive its product (failed export marked done
+            # on the checkpoint_ok fallback, a wiped results dir). Re-run such
+            # a stage instead of silently skipping it.
+            gone = _product_missing(cfg, cfg.output, stage)
+            if gone:
+                mf.mark(stage, "pending", note=f"product missing: {gone}")
+                print(f"[{stage}] marked done but its product is gone ({gone}); re-running")
+            else:
+                print(f"[{stage}] up-to-date — skipping")
+                continue
         if only:
             prereq.check(stage, mf, cfg)
         print(f"[{stage}] running…")

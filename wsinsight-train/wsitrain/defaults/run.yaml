@@ -83,7 +83,7 @@ norm_sample_size: 256        # cells per slide used to estimate the stain matrix
 # tell wsinsight to detect with the percentiles this run segmented with.
 stardist_normalization_pmin: 3.0
 stardist_normalization_pmax: 99.8
-epochs: 50
+epochs: 100
 batch_size: 128
 lr: 0.0001
 weight_decay: 0.0001

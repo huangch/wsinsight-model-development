@@ -110,7 +110,7 @@ class RunConfig:
     stardist_normalization_pmin: float = 3.0
     stardist_normalization_pmax: float = 99.8
     norm_sample_size: int = 256          # cells used to estimate the stain matrix
-    epochs: int = 50
+    epochs: int = 100
     batch_size: int = 128
     lr: float = 1e-4
     weight_decay: float = 1e-4

@@ -16,6 +16,10 @@ def _harden_tqdm_against_resize() -> None:
        the segment stage can be minutes away. A resize that lands while the
        main thread sits in a long C call (CUDA, tifffile) is still only picked
        up when that call returns: Python runs handlers between bytecodes.
+    3. Every reported terminal width loses one column. tqdm pads a bar to
+       exactly ``ncols``, so a full-width bar puts the closing ``]`` in the
+       final cell and leaves the terminal in the pending-wrap state that shows
+       the bracket as an overflow or a stray wrapped line.
 
     Sentinels are deliberately NOT package-prefixed: these packages share one
     env and land in one process, so a per-package sentinel would let each of
@@ -37,6 +41,23 @@ def _harden_tqdm_against_resize() -> None:
 
         _tqdm_std.tqdm.__init__ = _init
         _tqdm_std.tqdm._tqdm_resize_hardened = True
+
+    if not getattr(_tqdm_std, "_tqdm_width_margin_applied", False):
+        _orig_shape = _tqdm_std._screen_shape_wrapper
+
+        def _screen_shape_with_margin():
+            probe = _orig_shape()
+            if probe is None:
+                return probe
+
+            def _probe_one_short(fp):  # noqa: ANN001
+                cols, rows = probe(fp)
+                return (cols - 1 if cols else cols), rows
+
+            return _probe_one_short
+
+        _tqdm_std._screen_shape_wrapper = _screen_shape_with_margin
+        _tqdm_std._tqdm_width_margin_applied = True
 
     try:
         import os

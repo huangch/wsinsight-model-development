@@ -10,6 +10,9 @@ def _harden_tqdm_against_resize() -> None:
        width it saw at construction time.
     2. A ``SIGWINCH`` handler redraws every live bar the moment the terminal
        is resized, rather than waiting for the next ``update()``.
+    3. Every reported terminal width loses one column, because tqdm pads a bar
+       to exactly ``ncols`` and a full-width bar leaves the closing ``]`` in
+       the final cell, which the terminal renders as an overflow.
 
     Sentinels are deliberately NOT package-prefixed: these packages share one
     env and land in one process, so a per-package sentinel would let each of
@@ -31,6 +34,23 @@ def _harden_tqdm_against_resize() -> None:
 
         _tqdm_std.tqdm.__init__ = _init
         _tqdm_std.tqdm._tqdm_resize_hardened = True
+
+    if not getattr(_tqdm_std, "_tqdm_width_margin_applied", False):
+        _orig_shape = _tqdm_std._screen_shape_wrapper
+
+        def _screen_shape_with_margin():
+            probe = _orig_shape()
+            if probe is None:
+                return probe
+
+            def _probe_one_short(fp):  # noqa: ANN001
+                cols, rows = probe(fp)
+                return (cols - 1 if cols else cols), rows
+
+            return _probe_one_short
+
+        _tqdm_std._screen_shape_wrapper = _screen_shape_with_margin
+        _tqdm_std._tqdm_width_margin_applied = True
 
     try:
         import os

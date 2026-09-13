@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import random
 import re
+import warnings
 from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
@@ -32,6 +33,27 @@ class SplitResult(NamedTuple):
     n_slides: int
     train_slides: list[str]
     val_slides: list[str]
+    # Classes with no cells in val because their only carrier slide is pinned to
+    # train; they cannot be scored under a slide-disjoint holdout.
+    val_missing_classes: tuple[int, ...] = ()
+
+
+def _n_holdout(n_items: int, val_frac: float, what: str) -> int:
+    """Pick a holdout size, warning when ``val_frac`` cannot be honoured.
+
+    At least one item is held out and at least one is kept, so the reachable
+    fraction floors at ``1 / n_items``: asking for 0.2 of 3 slides silently
+    yields 0.333. Callers that size a cohort off ``val_frac`` need to be told.
+    """
+    n_val = max(1, min(int(round(n_items * val_frac)), n_items - 1))
+    actual = n_val / n_items
+    if abs(actual - val_frac) > 0.01:
+        warnings.warn(
+            f"{what}: val_frac={val_frac:.2f} is not reachable with {n_items} "
+            f"item(s); holding out {n_val} gives an effective val_frac="
+            f"{actual:.3f}",
+            RuntimeWarning, stacklevel=3)
+    return n_val
 
 
 def _slide_class_counts(label_dir: Path, slides: dict[str, list[str]]) -> dict[str, dict[int, int]]:
@@ -107,16 +129,22 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
             for k, n in c.items():
                 if n:
                     carriers[k].add(g)
-        # A class living on a single slide cannot be on both sides of a whole-slide
-        # holdout, so that slide is tile-split instead of assigned wholesale.
-        hybrid = {next(iter(v)) for v in carriers.values() if len(v) == 1}
-        pool = [g for g in slide_names if g not in hybrid]
-        for g in sorted(hybrid):
-            sole = sorted(k for k, v in carriers.items() if v == {g})
-            print(f"[split] tile-splitting {g!r}: sole carrier of class(es) {sole}")
-        if len(pool) < 2:                  # nothing left to hold out whole
-            pool = list(slide_names)
-            hybrid = set()
+        # A class living on a single slide cannot appear on both sides of a
+        # whole-slide holdout. That slide is pinned to train and the class is
+        # reported as unscorable: splitting its tiles across both sides would
+        # put training tiles in val, which is the one thing this mode exists to
+        # prevent.
+        locked = {g for v in carriers.values() if len(v) == 1 for g in v}
+        pool = [g for g in slide_names if g not in locked]
+        for g in sorted(locked):
+            s = sorted(k for k, v in carriers.items() if v == {g})
+            print(f"[split] pinning {g!r} to train: sole carrier of class(es) {s}")
+        if len(pool) < 2:
+            raise RuntimeError(
+                f"slide-level holdout needs >=2 slides that are not the sole "
+                f"carrier of some class; {len(locked)} of {len(slide_names)} "
+                f"slides are pinned to train, leaving {len(pool)}. Add slides, "
+                f"merge the rare classes, or use --by-tile.")
 
         # Hold out slides tissue by tissue, and never from a tissue that has only
         # one slide: an unstratified draw turns those into leave-tissue-out cases
@@ -130,33 +158,29 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
                 continue
             shuffled = list(names)
             rng.shuffle(shuffled)
-            n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
-            val_g.update(shuffled[:n_val])
+            val_g.update(shuffled[:_n_holdout(len(shuffled), val_frac,
+                                              f"slides of tissue {_tissue!r}")])
         if not val_g:                      # every tissue has a single slide
             shuffled = list(pool)
             rng.shuffle(shuffled)
-            n_val = max(1, min(int(round(len(shuffled) * val_frac)), len(shuffled) - 1))
-            val_g = set(shuffled[:n_val])
+            val_g = set(shuffled[:_n_holdout(len(shuffled), val_frac, "slides")])
         val_g, notes = _repair_class_coverage(
             val_g, pool, counts, {k for k, v in carriers.items() if len(v) >= 2})
         for n in notes:
             print(f"[split] {n}")
-        train_g = set(pool) - val_g
+        train_g = (set(pool) - val_g) | locked
 
-        train = [t for g in train_g for t in slides[g]]
-        val = [t for g in val_g for t in slides[g]]
-        for g in sorted(hybrid):
-            group = list(slides[g])
-            rng.shuffle(group)
-            n_val = max(1, min(int(round(len(group) * val_frac)), len(group) - 1)) \
-                if len(group) >= 2 else 0
-            val.extend(group[:n_val])
-            train.extend(group[n_val:])
+        missing = tuple(sorted(k for k, v in carriers.items() if not (v & val_g)))
+        if missing:
+            print(f"[split] classes absent from val (sole carrier pinned to "
+                  f"train): {list(missing)}")
         return SplitResult(
-            train=sorted(train), val=sorted(val),
-            mode="slide-level" + ("+hybrid" if hybrid else ""),
+            train=sorted(t for g in train_g for t in slides[g]),
+            val=sorted(t for g in val_g for t in slides[g]),
+            mode="slide-level",
             n_slides=len(slide_names),
-            train_slides=sorted(train_g | hybrid), val_slides=sorted(val_g | hybrid))
+            train_slides=sorted(train_g), val_slides=sorted(val_g),
+            val_missing_classes=missing)
 
     # Per-tile split, stratified by slide: hold out val_frac of tiles from
     # EACH slide. Every slide (and therefore every tissue) is represented in
@@ -167,10 +191,8 @@ def split_tiles(label_dir: Path, *, val_frac: float = 0.1,
     for g in slide_names:
         group = list(slides[g])
         rng.shuffle(group)
-        if len(group) >= 2:
-            n_val = max(1, min(int(round(len(group) * val_frac)), len(group) - 1))
-        else:
-            n_val = 0
+        n_val = _n_holdout(len(group), val_frac, f"tiles of {g!r}") \
+            if len(group) >= 2 else 0
         val.extend(group[:n_val])
         train.extend(group[n_val:])
     return SplitResult(train=sorted(train), val=sorted(val),

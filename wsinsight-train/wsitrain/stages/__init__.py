@@ -1147,6 +1147,9 @@ def split(cfg, samples, out: Path) -> dict[str, Any]:
     from ..configrender import render_config
     cfgp = render_config(cfg, out)
     return {"mode": res.mode, "n_train": len(res.train), "n_val": len(res.val),
+            "n_train_slides": len(res.train_slides),
+            "n_val_slides": len(res.val_slides),
+            "val_missing_classes": list(res.val_missing_classes),
             "weights": wr.weights, "config": str(cfgp)}
 
 

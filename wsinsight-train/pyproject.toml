@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wsinsight-train"
-version = "0.1.0"
+version = "1.0.0"
 description = "End-to-end, headless CLI to train WSInsight CellViT cell-classification heads from paired Xenium + H&E."
 readme = "README.md"
 # 3.11 matches wsinsight; every install path (conda-setup.sh, Dockerfile) builds

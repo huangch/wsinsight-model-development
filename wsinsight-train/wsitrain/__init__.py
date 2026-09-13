@@ -1,6 +1,6 @@
 """wsinsight-train — headless CLI to train WSInsight CellViT heads."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 
 def _harden_tqdm_against_resize() -> None:

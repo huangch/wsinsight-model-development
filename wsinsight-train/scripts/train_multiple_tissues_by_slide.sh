@@ -14,10 +14,11 @@
 # train_one_tissue_by_slide.sh: a 3-slide cohort cannot support a credible
 # whole-slide holdout on its own.
 #
-# Any slide that is the sole carrier of a class is tile-split instead so the
-# class can appear on both sides; the split then reports mode
-# "slide-level+hybrid". Read the [split] lines in the run log before quoting
-# the mode anywhere.
+# Any slide that is the sole carrier of a class is pinned to train and that
+# class is reported as unscorable, because tile-splitting it would put training
+# tiles in val -- the one thing this mode exists to prevent. The split always
+# reports mode "slide-level"; read the [split] lines in the run log to see
+# which slides were pinned and which classes are absent from val.
 #
 # Usage: bash scripts/train_multiple_tissues_by_slide.sh <tissue,tissue,...> [input_dir] [output_dir]
 #   e.g. bash scripts/train_multiple_tissues_by_slide.sh breast,lung
@@ -28,8 +29,8 @@
 # pancreas, prostate, skin, tonsil).
 #
 # Env:
-#   TASK       label space (default pantissue). Pooling tissues only makes
-#              sense with a shared vocabulary, which is what pantissue is. The
+#   TASK       label space (default hne). Pooling tissues only makes
+#              sense with a shared vocabulary, which is what hne is. The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -143,7 +144,7 @@ INPUT="${2:-$DATA_ROOT}"
 # subset must get its own --output or it will reuse another run's state.
 SLUG="$(echo "$TISSUE" | tr ',' '-')"
 OUT="${3:-$MODELS_ROOT/${SLUG}_by_slide}"
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"
@@ -298,4 +299,4 @@ echo
 echo "Done."
 echo "  model  : $OUT/models/$TISSUE/main/"
 echo "  report : $OUT/report/$TISSUE/"
-echo "  split  : $OUT/report/$TISSUE/ -- confirm mode is 'slide-level', not 'slide-level+hybrid'"
+echo "  split  : $OUT/report/$TISSUE/ -- read the [split] lines for pinned slides and unscorable classes"

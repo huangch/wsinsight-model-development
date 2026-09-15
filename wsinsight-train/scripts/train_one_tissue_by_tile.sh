@@ -13,7 +13,7 @@
 # pancreas, prostate, skin, tonsil).
 #
 # Env:
-#   TASK       label space (default pantissue). The
+#   TASK       label space (default hne). The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -124,7 +124,7 @@ esac
 
 INPUT="${2:-$DATA_ROOT}"
 OUT="${3:-$MODELS_ROOT/${TISSUE}_by_tile}"         # own scope: manifest is per output+tissue
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"

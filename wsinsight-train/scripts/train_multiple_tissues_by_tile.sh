@@ -14,8 +14,8 @@
 # pancreas, prostate, skin, tonsil).
 #
 # Env:
-#   TASK       label space (default pantissue). Pooling tissues only makes
-#              sense with a shared vocabulary, which is what pantissue is. The
+#   TASK       label space (default hne). Pooling tissues only makes
+#              sense with a shared vocabulary, which is what hne is. The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -129,7 +129,7 @@ INPUT="${2:-$DATA_ROOT}"
 # subset must get its own --output or it will reuse another run's state.
 SLUG="$(echo "$TISSUE" | tr ',' '-')"
 OUT="${3:-$MODELS_ROOT/${SLUG}_by_tile}"
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"

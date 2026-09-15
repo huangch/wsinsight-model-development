@@ -10,7 +10,7 @@
 # Usage: bash scripts/train_pantissue_by_tile.sh [input_dir] [output_dir]
 #
 # Env:
-#   TASK       label space (default pantissue). The
+#   TASK       label space (default hne). The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -108,7 +108,7 @@ mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 INPUT="${1:-$DATA_ROOT}"
 OUT="${2:-$MODELS_ROOT/pantissue_by_tile}"
 TISSUE=pantissue
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"

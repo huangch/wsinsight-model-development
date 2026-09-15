@@ -15,15 +15,15 @@
 # genuine leave-site-out, hold the sites out yourself by running one head per
 # site subset with train_multiple_tissues_by_slide.sh.
 #
-# Any slide that is the sole carrier of a class is tile-split instead, so the
-# class can appear on both sides; the split then reports mode
-# "slide-level+hybrid". With a long tail of rare tissues this is common --
-# read the [split] lines in the run log before quoting the mode anywhere.
+# Any slide that is the sole carrier of a class is pinned to train and that
+# class is reported as unscorable, rather than being tile-split into val. With
+# a long tail of rare tissues this is common -- read the [split] lines in the
+# run log to see which slides were pinned and which classes went unscored.
 #
 # Usage: bash scripts/train_pantissue_by_slide.sh [input_dir] [output_dir]
 #
 # Env:
-#   TASK       label space (default pantissue). The
+#   TASK       label space (default hne). The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -121,7 +121,7 @@ mkdir -p "$TMPDIR" "$CELLPOSE_LOCAL_MODELS_PATH" "$TORCH_HOME"
 INPUT="${1:-$DATA_ROOT}"
 OUT="${2:-$MODELS_ROOT/pantissue_by_slide}"
 TISSUE=pantissue
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"
@@ -272,4 +272,4 @@ echo
 echo "Done."
 echo "  model  : $OUT/models/$TISSUE/main/"
 echo "  report : $OUT/report/$TISSUE/"
-echo "  split  : $OUT/report/$TISSUE/ -- confirm mode is 'slide-level', not 'slide-level+hybrid'"
+echo "  split  : $OUT/report/$TISSUE/ -- read the [split] lines for pinned slides and unscorable classes"

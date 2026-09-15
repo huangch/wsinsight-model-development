@@ -13,10 +13,10 @@
 #   colorectal  3 slides -> round(0.6) = 1   -> 2 train / 1 val
 # Set VAL_FRAC=0.125 for a 7/1 breast split. A tissue with a single slide is
 # never held out (leave-tissue-out is unscoreable), and any slide that is the
-# sole carrier of a class is tile-split instead so the class can appear on both
-# sides; the split then reports mode "slide-level+hybrid". Check the [split]
-# lines in the run log and split.json for exactly which slides went where --
-# with cohorts this small the mode is not guaranteed to be pure slide-level.
+# sole carrier of a class is pinned to train, leaving that class unscorable
+# rather than tile-splitting it into val. Check the [split] lines in the run
+# log and split.json for exactly which slides went where -- with cohorts this
+# small, a large share of the vocabulary can end up unscored.
 #
 # Usage: bash scripts/train_one_tissue_by_slide.sh <tissue> [input_dir] [output_dir]
 #   e.g. bash scripts/train_one_tissue_by_slide.sh breast
@@ -27,7 +27,7 @@
 # pancreas, prostate, skin, tonsil).
 #
 # Env:
-#   TASK       label space (default pantissue). The
+#   TASK       label space (default hne). The
 #              celltype_assignment_<TASK>_label.csv files already exist under
 #              each sample's outs/, so the annotate stage finds nothing to do
 #              and returns immediately -- kurtorank is not invoked.
@@ -138,7 +138,7 @@ esac
 
 INPUT="${2:-$DATA_ROOT}"
 OUT="${3:-$MODELS_ROOT/${TISSUE}_by_slide}"        # own scope: manifest is per output+tissue
-TASK="${TASK:-pantissue}"
+TASK="${TASK:-hne}"
 SEGMENTER="${SEGMENTER:-stardist}"
 VAL_FRAC="${VAL_FRAC:-0.20}"
 SEED="${SEED:-42}"
@@ -298,4 +298,4 @@ echo
 echo "Done."
 echo "  model  : $OUT/models/$TISSUE/main/"
 echo "  report : $OUT/report/$TISSUE/"
-echo "  split  : $OUT/report/$TISSUE/ -- confirm mode is 'slide-level', not 'slide-level+hybrid'"
+echo "  split  : $OUT/report/$TISSUE/ -- read the [split] lines for pinned slides and unscorable classes"

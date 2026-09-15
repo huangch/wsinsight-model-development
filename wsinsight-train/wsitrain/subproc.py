@@ -17,9 +17,15 @@ def child_env(cellvit: str) -> dict[str, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join([str(_SHIM), cellvit])
     # The child's stdout is our pipe, so it cannot measure the terminal itself;
-    # shutil.get_terminal_size() reads COLUMNS before probing the fd.
-    if "COLUMNS" not in env:
-        columns = shutil.get_terminal_size().columns
-        if columns:
-            env["COLUMNS"] = str(columns)
+    # shutil.get_terminal_size() reads COLUMNS before probing the fd. Both
+    # names are needed: tqdm's env fallback reads COLUMNS *and* LINES in one
+    # comprehension and returns no size at all if either is missing, which
+    # leaves every child bar unconstrained and wrapping in the parent's
+    # terminal.
+    if "COLUMNS" not in env or "LINES" not in env:
+        size = shutil.get_terminal_size()
+        if size.columns:
+            env.setdefault("COLUMNS", str(size.columns))
+        if size.lines:
+            env.setdefault("LINES", str(size.lines))
     return env

@@ -73,8 +73,18 @@ def _harden_tqdm_against_resize() -> None:
         def _on_winch(signum, frame):  # noqa: ANN001
             # tqdm falls back to COLUMNS/LINES when the ioctl fails (redirected
             # fp); a stale pair exported by the shell would pin the old width.
-            os.environ.pop("COLUMNS", None)
-            os.environ.pop("LINES", None)
+            # Only drop them when this process can measure the terminal itself
+            # -- in a piped child (CellViT under wsitrain) that env pair is the
+            # only width there is, and clearing it unconstrains every bar.
+            import sys
+
+            try:
+                measurable = sys.stderr.isatty()
+            except Exception:
+                measurable = False
+            if measurable:
+                os.environ.pop("COLUMNS", None)
+                os.environ.pop("LINES", None)
             for inst in list(getattr(_tqdm_std.tqdm, "_instances", [])):
                 # One bar that cannot be redrawn must not cost the others their
                 # repaint, so each is isolated rather than the loop as a whole.

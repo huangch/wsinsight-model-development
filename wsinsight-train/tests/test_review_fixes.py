@@ -398,6 +398,13 @@ def _winch_handler():
     return handler
 
 
+class _FakeTty(io.StringIO):
+    """Stand-in for a stderr the process can measure with an ioctl."""
+
+    def isatty(self) -> bool:
+        return True
+
+
 def test_bars_default_to_the_ascii_style():
     """Third-party bars (cellpose, stardist, torch) drew unicode blocks."""
     from tqdm import tqdm
@@ -436,11 +443,28 @@ def test_resize_drops_a_stale_terminal_size(monkeypatch):
     """tqdm falls back to COLUMNS/LINES when the ioctl fails."""
     monkeypatch.setenv("COLUMNS", "999")
     monkeypatch.setenv("LINES", "999")
+    monkeypatch.setattr(sys, "stderr", _FakeTty())
 
     _winch_handler()(signal.SIGWINCH, None)
 
     assert "COLUMNS" not in os.environ
     assert "LINES" not in os.environ
+
+
+def test_resize_keeps_the_size_a_piped_child_cannot_measure(monkeypatch):
+    """CellViT's stdout is wsitrain's pipe, so the env pair is its only width.
+
+    Dropping it there leaves every child bar unconstrained, which is what made
+    the cache bar wrap in the parent's terminal on every refresh.
+    """
+    monkeypatch.setenv("COLUMNS", "120")
+    monkeypatch.setenv("LINES", "40")
+    monkeypatch.setattr(sys, "stderr", io.StringIO())  # a pipe: not a tty
+
+    _winch_handler()(signal.SIGWINCH, None)
+
+    assert os.environ["COLUMNS"] == "120"
+    assert os.environ["LINES"] == "40"
 
 
 def test_a_disabled_bar_does_not_cost_the_others_their_repaint():

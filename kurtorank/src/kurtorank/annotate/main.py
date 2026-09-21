@@ -8,7 +8,7 @@ KurtoRank v3 annotate pipeline. Ported from kurtorank3.ipynb, derived from
 kurtorank2-cli.py.
 
 v3 changes relative to v2:
-    - Consumes an atlas-reranked marker CSV (bundled default: markers-v6.csv). Tolerates
+    - Consumes an atlas-reranked marker CSV (bundled default: markers-v7.csv). Tolerates
     the extra `rank_source` and `low_support` columns; malignant filtering
     uses the `malignant` column rather than v2's `normal`.
   - Optional `--use-top-k-markers K` truncation: keep only the K most
@@ -2673,8 +2673,8 @@ def export_qust_csvs(adata: ad.AnnData, xenium_dir: Path, out_dir: Path):
     "--markers-csv",
     type=click.Path(exists=True, dir_okay=False, file_okay=True, path_type=Path),
     default=lambda: _default_markers_csv(),
-    show_default="bundled markers-v6.csv",
-    help="Marker gene CSV file. Defaults to the bundled markers-v6.csv shipped with "
+    show_default="bundled markers-v7.csv",
+    help="Marker gene CSV file. Defaults to the bundled markers-v7.csv shipped with "
          "this package; pass a path to override.",
 )
 @click.option(

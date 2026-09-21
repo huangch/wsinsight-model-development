@@ -38,7 +38,7 @@ matters when changing them:
 - `schema` — emits `{"schema_version": 1, "commands": {...}}`. Every engine in
   the family exposes this, so downstream tools need no per-project casing.
   Regenerate consumers after any option change.
-- The bundled panel (`markers/data/markers-v6.csv`) is 347 rows over 19 tissue
+- The bundled panel (`markers/data/markers-v7.csv`) is 347 rows over 19 tissue
   types, and `TISSUE_MAP` in `rank/main.py` has a Census mapping for all 19 —
   keep the two in step when adding a tissue, or `rank-markers` silently skips
   it.

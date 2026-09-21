@@ -1,12 +1,12 @@
 """Derive celltype_assignment_sthelar_full_label.csv from each sample's
-celltype_assignment_subtype.csv using the markers-v6.csv crosswalk.
+celltype_assignment_subtype.csv using the markers-v7.csv crosswalk.
 
 `kurtorank annotate` now writes the STHELAR label CSVs itself, so this script is
 only needed to backfill samples annotated before that change (re-running
 annotate on them would be far slower).
 
 The per-cluster `subtype` -> `sthelar_full_label` mapping is 1:1 in
-markers-v6.csv (unlike hne_label, which fans out for lymphocyte /
+markers-v7.csv (unlike hne_label, which fans out for lymphocyte /
 hematologic_blast), so we remap the subtype CSV's `cell_type` column through it.
 Cluster-level assignment is unchanged; only the label vocabulary is collapsed.
 
@@ -22,7 +22,7 @@ from pathlib import Path
 import pandas as pd
 
 _PKG_MARKERS = (Path(__file__).resolve().parent.parent
-                / "src/kurtorank/markers/data/markers-v6.csv")
+                / "src/kurtorank/markers/data/markers-v7.csv")
 
 
 def build_subtype_to_sthelar_map(markers_csv: Path) -> dict[str, str]:
@@ -45,7 +45,7 @@ def main() -> None:
     ap.add_argument("--data-dir", required=True, type=Path,
                     help="Root to recurse for celltype_assignment_subtype.csv files.")
     ap.add_argument("--markers-csv", type=Path, default=_PKG_MARKERS,
-                    help="markers-v6.csv with the subtype->sthelar_full_label crosswalk.")
+                    help="markers-v7.csv with the subtype->sthelar_full_label crosswalk.")
     ap.add_argument("--exclude", action="append", default=[],
                     help="Top-level tissue folder name(s) to skip (repeatable).")
     ap.add_argument("--overwrite", action="store_true",
@@ -87,7 +87,7 @@ def main() -> None:
     print(f"\nWrote {written} file(s); skipped {skipped} existing "
           f"(use --overwrite to rebuild).")
     if unknown_total:
-        print("\nWARNING: subtype values not in markers-v6.csv (left unmapped):")
+        print("\nWARNING: subtype values not in markers-v7.csv (left unmapped):")
         for k, v in sorted(unknown_total.items()):
             print(f"  {k!r} appeared in {v} file(s)")
 

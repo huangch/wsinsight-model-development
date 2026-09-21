@@ -45,13 +45,13 @@ orders an existing one, `annotate` consumes one.
 
 ### 1.2 The bundled panel
 
-`markers-v6.csv` ships with the package: **347 rows across 19 tissue types**.
+`markers-v7.csv` ships with the package: **347 rows across 19 tissue types**.
 It is the default for `kurtorank annotate --markers-csv`, so most annotation
 runs need no panel argument at all.
 
 ```python
 from kurtorank.markers import default_markers_csv
-default_markers_csv()   # -> .../kurtorank/markers/data/markers-v6.csv
+default_markers_csv()   # -> .../kurtorank/markers/data/markers-v7.csv
 ```
 
 Columns: `tissue_type, common, malignant, major_type, subtype, pannuke_label,
@@ -133,7 +133,7 @@ yourself.
 | ------ | ---- | ------- | ----------- |
 | `--xenium-dir` | directory | *required* | Xenium `outs` directory. |
 | `--tissue-type` | choice | *required* | Tissue for marker filtering. See §3.1.1 for the valid values. |
-| `--markers-csv` | file | bundled `markers-v6.csv` | Override the marker panel. |
+| `--markers-csv` | file | bundled `markers-v7.csv` | Override the marker panel. |
 | `--output-dir` | directory | `--xenium-dir` | Where artifacts are written. |
 | `--common-only / --no-common-only` | flag | `--common-only` | Use only cell types flagged common. |
 | `--normal-only / --include-cancer` | flag | `--include-cancer` | Restrict to non-malignant types, or keep malignant ones. |
@@ -322,7 +322,7 @@ Three things routinely go wrong here:
 1. **The output is a skeleton, not a panel.** The biology columns `annotate`
    requires — `major_type`, `pannuke_label`, `hne_type`, `hne_label`, `common`,
    `malignant` — are **not** produced. Feeding the raw output to `annotate`
-   will not work. Never auto-merge it into `markers-v6.csv`; that merge needs
+   will not work. Never auto-merge it into `markers-v7.csv`; that merge needs
    hand curation.
 2. **`--atlases` takes slugs, not display labels.** Run `--list-atlases` first
    and copy the slug.
@@ -355,7 +355,7 @@ Two functions mirror the CLI for use inside a notebook.
 from kurtorank import rerank_markers
 
 df_out, qc_df = rerank_markers(
-    input_csv="markers-v6.csv",
+    input_csv="markers-v7.csv",
     tissues=["breast", "colorectal"],
     census_uri="/path/to/census-soma",
     parallel=4,
